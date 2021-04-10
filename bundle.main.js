@@ -5181,31 +5181,37 @@
   if(typeof __THREE_DEVTOOLS__!=='undefined'){/* eslint-disable no-undef */__THREE_DEVTOOLS__.dispatchEvent(new CustomEvent('register',{detail:{revision:REVISION}}));/* eslint-enable no-undef */}if(typeof window!=='undefined'){if(window.__THREE__){console.warn('WARNING: Multiple instances of Three.js being imported.');}else {window.__THREE__=REVISION;}}
 
   const seed = 1018;
-  const biomeFactor = 4;
+  const biomeFactor = 3;
   const biomes = {
     "mountain": {
       "weight": 1,
-      "height": +.15
+      "height": +.15,
+      "caves": 2
     },
     "plains": {
       "weight": 2,
-      "height": +.05
+      "height": +.05,
+      "caves": 1
     },
     "desert": {
       "weight": 1,
-      "height": +.04
+      "height": +.04,
+      "caves": 1
     },
     "forest": {
       "weight": 2,
-      "height": +.03
+      "height": +.03,
+      "caves": 1
     },
     "ocean": {
       "weight": 1,
-      "height": -.5
+      "height": -.5,
+      "caves": 1
     },
     "river": {
       "weight": 2,
-      "height": -.2
+      "height": -.2,
+      "caves": 1
     }
   };
   class HillyGenerator {
@@ -5236,16 +5242,20 @@
       chunk.roughHeight = this.middle + eh * (eh < 0 ? this.middle - this.lower : this.higher - this.middle);
       var caveRNG = chunk.rng();
       var radius = caveRNG * caveRNG * 2.5 + 1.8;
-      var heightRNG = 2 * (chunk.rng() - .5);
-      heightRNG = Math.sign(heightRNG) * Math.pow(Math.abs(heightRNG), 3);
-      heightRNG = heightRNG / 2 + .5;
-      chunk.caveCount = Math.floor(chunk.rng() * 3) + 1;
-      chunk.cave = {
-        x: chunk.x * Chunk.width + Math.floor(chunk.rng() * Chunk.width),
-        y: chunk.y * Chunk.height + Math.floor(chunk.rng() * Chunk.height),
-        z: Math.floor(heightRNG * (chunk.roughHeight * 1.3) + 10),
-        radius: radius
-      };
+      chunk.caveBudget = Math.floor(chunk.rng() * 40) + 40;
+      chunk.caves = [];
+
+      for (var i = 0; i < biomes[chunk.biome].caves; i++) {
+        var heightRNG = 2 * (chunk.rng() - .5);
+        heightRNG = Math.sign(heightRNG) * Math.pow(Math.abs(heightRNG), 1);
+        heightRNG = heightRNG / 2 + .5;
+        chunk.caves.push({
+          x: chunk.x * Chunk.width + Math.floor(chunk.rng() * Chunk.width),
+          y: chunk.y * Chunk.height + Math.floor(chunk.rng() * Chunk.height),
+          z: Math.floor(heightRNG * (chunk.roughHeight * 1.2) + 5),
+          radius: radius
+        });
+      }
     }
 
     calculateBiome(chunk) {
@@ -5385,10 +5395,7 @@
 
             _noise = _noise * .15 + biomes["river"].height;
             eh += _noise * riverSample;
-          } // debugger
-          // eh = (eh * .5) + .5
-          // eh = Math.pow(eh, smooth)
-
+          }
 
           if (isNaN(eh)) {
             debugger;
@@ -5558,20 +5565,33 @@
         chunk.structures.push(["stone_vein", coal]);
       }
 
-      let caves = [];
-      this.chunkMap.neighbors(chunk, 8, function (c) {
-        var score = chunk.rng() / Math.abs(c.cave.z - chunk.cave.z);
-        caves.push({
-          score: score,
-          cave: c.cave
-        });
-      });
-      caves.sort(function (a, b) {
-        return b.score - a.score;
-      });
+      let allCavePairs = [];
 
-      for (let i = 0; i < chunk.caveCount; i++) {
-        chunk.structures.push(["cave", caves[i].cave]); // LIFO, caves should be first
+      for (var i = 0; i < chunk.caves.length; i++) {
+        var aCave = chunk.caves[i];
+        this.chunkMap.neighbors(chunk, 8, function (c) {
+          for (var j = 0; j < c.caves.length; j++) {
+            var bCave = c.caves[j];
+            var heightOffset = bCave.z == aCave.z ? 1 : Math.abs(bCave.z - aCave.z);
+            var score = chunk.rng() + heightOffset / 50;
+            allCavePairs.push({
+              score: score,
+              aCave: aCave,
+              bCave: bCave,
+              cost: heightOffset
+            });
+          }
+        });
+      }
+
+      allCavePairs.sort(function (a, b) {
+        return a.score - b.score;
+      }); // debugger
+
+      for (let i = 0; i < allCavePairs.length; i++) {
+        chunk.caveBudget -= allCavePairs[i].cost;
+        if (chunk.caveBudget < 0) break;
+        chunk.structures.push(["cave", allCavePairs[i]]); // LIFO, caves should be first
       }
 
       chunk.rng = false;
@@ -5585,10 +5605,10 @@
 
       while (item = chunk.structures.pop()) {
         if (item[0] == "cave") {
-          var caveB = item[1];
           var {
-            cave: caveA
-          } = chunk;
+            bCave: caveB,
+            aCave: caveA
+          } = item[1];
           var {
             x,
             y,
@@ -6073,6 +6093,7 @@
     return true;
   }
 
+  const mirror = false;
   class ChunkMesh {
     constructor(x, y, regular, unculled, transparent) {
       this.x = x;
@@ -6432,7 +6453,7 @@
             y = Math.floor(pos / w);
         let column = chunk.heights[PaddedChunk.index2d(x, y)] + 1;
 
-        for (let z = column; z > 0; z--) {
+        for (let z = column; z >= 0; z--) {
           this.addVoxel(x, y, z, chunk);
         }
       }
@@ -6499,7 +6520,7 @@
       let tw = texWidth,
           th = texWidth;
 
-      if (faceAttrs[atlas].mirror) {
+      if (faceAttrs[atlas].mirror && mirror) {
         let a = (quickhash(x * 7) + quickhash(y * 11) + quickhash(z * 13)) % 4;
         let hFlip = a % 2 == 0,
             vFlip = a < 2;
@@ -6690,6 +6711,7 @@
       copy(this.modelViewMatrix, renderEvent.viewMatrix);
       var maximumRender = 10000;
       var rList = [];
+      var countRenderableChunks = 0;
 
       for (let chunk of chunks.values()) {
         if (!chunk.uploaded) continue;
@@ -6697,6 +6719,8 @@
         if (chunk.unculled.length + chunk.regular.length + chunk.transparent.length == 0) {
           continue;
         }
+
+        countRenderableChunks++;
 
         if (!chunk.insideFrustum(renderEvent.frustrumMatrix)) {
           continue;
@@ -6716,7 +6740,8 @@
         var dby = (b.y + .5) * Chunk.height - renderEvent.camera.position[1];
         return dax * dax + day * day - (dbx * dbx + dby * dby);
       });
-      var renderCount = 0;
+      var countDrawCalls = 0,
+          countTris = 0;
       this.gl.activeTexture(this.gl.TEXTURE0);
       this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.regular.texture);
       this.gl.useProgram(this.regular.program);
@@ -6729,11 +6754,12 @@
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
         if (Math.floor(chunk.renderSize * chunk.regular.length) == 0) continue;
-        if (renderCount > maximumRender) break;
-        renderCount++;
+        if (countDrawCalls > maximumRender) break;
+        countDrawCalls++;
         this.gl.uniformMatrix4fv(this.regular.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.regular.vao);
         this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.regular.length));
+        countTris += Math.floor(chunk.renderSize * chunk.regular.length);
       }
 
       this.gl.useProgram(this.unculled.program);
@@ -6743,11 +6769,12 @@
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
         if (Math.floor(chunk.renderSize * chunk.unculled.length) == 0) continue;
-        if (renderCount > maximumRender) break;
-        renderCount++;
+        if (countDrawCalls > maximumRender) break;
+        countDrawCalls++;
         this.gl.uniformMatrix4fv(this.unculled.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.unculled.vao);
         this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.unculled.length));
+        countTris += Math.floor(chunk.renderSize * chunk.unculled.length);
       }
 
       this.gl.useProgram(this.transparent.program);
@@ -6759,11 +6786,12 @@
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
         if (Math.floor(chunk.renderSize * chunk.transparent.length) == 0) continue;
-        if (renderCount > maximumRender) break;
-        renderCount++;
+        if (countDrawCalls > maximumRender) break;
+        countDrawCalls++;
         this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.transparent.vao);
         this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.transparent.length));
+        countTris += Math.floor(chunk.renderSize * chunk.transparent.length);
       }
 
       if (this.highlight) {
@@ -6800,7 +6828,12 @@
         }
       }
 
-      return rList.length;
+      return {
+        countDrawCalls: countDrawCalls,
+        countChunks: countRenderableChunks,
+        countFrustum: rList.length - countRenderableChunks,
+        countTris: countTris
+      };
     }
 
   }
@@ -6850,7 +6883,15 @@
         gl_Position = uProjectionMatrix * uModelViewMatrix * realPos;
 
         vLight = (aVertexLight + 5.0) / (64.0 + 16.0 + 5.0);
-        vTextureCoord = tex;
+
+        bool xo = (mod(pos.x, 2.0)==0.0);
+        bool yo = (mod(pos.y, 2.0)==0.0);
+        // bool zo = (mod(pos.z, 2.0)==0.0);
+        if (xo && (tex.x == 0.0)) {
+            tex.x += 1.0;
+        }
+        
+        vTextureCoord = tex/2.0;
     }
     #endif 
     
@@ -7315,11 +7356,25 @@
 
     start() {
       let host = document.currentScript.parentNode;
+      var overlay = document.createElement("div");
+      overlay.style.position = "absolute";
+      overlay.style.top = "0";
+      overlay.style.left = "0";
+      this.overlay = overlay;
+      var optionsElement = document.createElement("div");
+      this.optionsElement = optionsElement;
+      overlay.appendChild(optionsElement);
       var debugElement = document.createElement("div");
-      debugElement.style.position = "absolute";
-      debugElement.style.top = "0";
-      debugElement.style.left = "0";
       this.debugElement = debugElement;
+      overlay.appendChild(debugElement);
+      var renderDistanceElement = document.createElement("input");
+      renderDistanceElement.type = "range";
+      renderDistanceElement.value = 9;
+      renderDistanceElement.min = 1;
+      renderDistanceElement.max = 31;
+      renderDistanceElement.step = 1;
+      this.renderDistanceElement = renderDistanceElement;
+      optionsElement.appendChild(renderDistanceElement);
       var canvas = document.createElement("canvas");
       this.canvas = canvas;
       canvas.style.float = "right";
@@ -7386,7 +7441,7 @@
 
       this.finishedLoading = function () {
         host.removeChild(loadingScreen);
-        host.appendChild(debugElement);
+        host.appendChild(overlay);
       };
 
       this.events.emit("context", {
@@ -7933,24 +7988,34 @@
 
     render(ev) {
       // debugger
-      this.canvas.debug.Chunks = this.renderer.render(ev, this.chunks) + "/" + this.chunks.chunks.size;
+      let {
+        countDrawCalls,
+        countChunks,
+        countFrustum,
+        countTris
+      } = this.renderer.render(ev, this.chunks);
+      this.canvas.debug.Chunks = "chunks: " + countChunks + "/" + this.chunks.chunks.size + " " + countFrustum + " ";
+      this.canvas.debug.Chunks += "draws: " + countDrawCalls + " polys: " + countTris;
     }
 
     postRender() {
       // let the host know the area we're in
       if (!this.player) return;
       this.renderer.highlight = this.player.targetVoxel;
+      let rd = this.canvas.renderDistanceElement.value;
       let [x, y, z] = this.player.position;
       var center = this.player.currentChunk;
 
-      if (center.id != this.lastPlayerChunkID) {
+      if (center.id != this.cache.chunkID || rd != this.cache.renderDistance) {
+        this.canvas.debug["Render Distance"] = rd;
         this.pipe({
           "event": "chunk_of_interest",
           "x": center.x,
           "y": center.y
         });
-        console.log("old chunk", this.lastPlayerChunkID, "new chunk", center);
-        this.lastPlayerChunkID = this.player.currentChunk.id;
+        console.log("old chunk", this.cache.chunkID, "new chunk", center);
+        this.cache.chunkID = this.player.currentChunk.id;
+        this.cache.renderDistance = rd;
 
         for (let chunk of this.chunks.chunks.values()) {
           chunk.isHot = false;
@@ -7965,7 +8030,7 @@
         for (var i = 0; i < toSend.length; i++) {
           let chunk = toSend[i];
           chunk.isHot = true;
-          chunk.isVisible = dist$1([center.x, center.y], [chunk.x, chunk.y]) <= 17;
+          chunk.isVisible = dist$1([center.x, center.y], [chunk.x, chunk.y]) <= this.cache.renderDistance;
         }
       } // update the visibility flag
 
@@ -7984,8 +8049,9 @@
         if (count < 8) continue; // neighbors are all ready, lets get this rendering
 
         chunk.shouldShow = true;
-      } // for every chunk, see if we need to free things
+      }
 
+      var allowedWork = 2; // for every chunk, see if we need to free things
 
       for (let chunk of this.chunks.chunks.values()) {
         // create or destroy the mesh
@@ -7996,15 +8062,8 @@
             chunk.meshReady = false;
           }
 
-          if (chunk.meshUploaded) {
-            chunk.renderSize += .02;
-
-            if (chunk.renderSize > 1) {
-              chunk.renderSize = 1;
-            }
-          }
-
-          if (chunk.meshDirty && !chunk.meshPending) {
+          if (chunk.meshDirty && !chunk.meshPending && allowedWork > 0) {
+            allowedWork -= 1;
             var padded = this.chunks.padded(chunk);
             this.work({
               "event": "tesselate",
@@ -8023,6 +8082,14 @@
               this.renderer.free(chunk);
               chunk.meshUploaded = false;
               chunk.meshDirty = true;
+            }
+          }
+        } else {
+          if (chunk.meshUploaded) {
+            chunk.renderSize += .02;
+
+            if (chunk.renderSize > 1) {
+              chunk.renderSize = 1;
             }
           }
         } // clean this chunk up entirely
@@ -8059,6 +8126,7 @@
           this.canvas = new Canvas();
           this.chunks = new InfiniteChunkMap();
           this.renderer = new ChunkSurfaceMaterial(this.canvas);
+          this.cache = {};
           this.canvas.events.on("context", ({
             gl
           }) => this.renderer.context(gl));
