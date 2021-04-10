@@ -7472,6 +7472,10 @@
 
         if (fps < 55) {
           fMax = (fMax * 99 + fMax + 1) / 100;
+
+          if (fMax > 3) {
+            fMax = 3;
+          }
         } else {
           fMax = (fMax * 99 + fMax - 1) / 100;
 
@@ -7482,7 +7486,7 @@
 
         document.title = "FPS " + Math.floor(fps) + "/" + Math.floor(fMax);
 
-        if (fCount < fMax) {
+        if (fCount < Math.round(fMax)) {
           return;
         }
 
@@ -7520,7 +7524,7 @@
         if (frameTime > 0.001) efps = (efps * 9 + 1000 / frameTime) / 10;
         lastFrame = start; // this.debug.error = gl.getError()
 
-        this.debug.FPS = "aaactual: " + Math.floor(fps) + ", effective: " + Math.floor(efps);
+        this.debug.FPS = "aaactual: " + Math.floor(fps / fMax) + ", effective: " + Math.floor(efps);
       }
 
       this.events.on("postrender", function () {
