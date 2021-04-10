@@ -1514,14 +1514,59 @@
       return x + 1 + PaddedChunk.height * (y + 1);
     }
 
-  } // InfiniteChunkMap wraps the complexity of infinite voxel pages
-  // all methods are in global space
+  } // SubChunk is a low-level container for a 1x1 chunk with a shell
+  // all calls should be in chunk-local space
 
   _defineProperty(PaddedChunk, "width", 18);
 
   _defineProperty(PaddedChunk, "height", 18);
 
   _defineProperty(PaddedChunk, "depth", 258);
+
+  class SubChunk {
+    constructor(x, y, z) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+    } // at provides low-level query for a specific value
+
+
+    at(x, y, z) {
+      return this.map[SubChunk.index3d(x, y, z)];
+    } // at provides low-level query for a specific value
+
+
+    light(x, y, z) {
+      var bonus = this.at(x, y, z) == 0 ? 2 : 1;
+      return this.lights[SubChunk.index3d(x, y, z)] + bonus;
+    }
+
+    index3d(x, y, z) {
+      // global-space
+      return z - this.z + 1 + SubChunk.depth * (y - this.y + 1 + SubChunk.width * (x - this.x + 1));
+    }
+
+    index2d(x, y, z) {
+      // global-space
+      return x - this.x + 1 + SubChunk.height * (y - this.y + 1);
+    }
+
+    static index3d(x, y, z) {
+      return z + 1 + SubChunk.depth * (y + 1 + SubChunk.width * (x + 1));
+    }
+
+    static index2d(x, y, z) {
+      return x + 1 + SubChunk.height * (y + 1);
+    }
+
+  } // InfiniteChunkMap wraps the complexity of infinite voxel pages
+  // all methods are in global space
+
+  _defineProperty(SubChunk, "width", 3);
+
+  _defineProperty(SubChunk, "height", 3);
+
+  _defineProperty(SubChunk, "depth", 3);
 
   class InfiniteChunkMap {
     constructor() {
@@ -1582,7 +1627,10 @@
       var target = this.locate(x, y, z);
       if (!target.chunk) return;
       if (!target.chunk.map) debugger;
+      var curr = target.chunk.at(target.x, target.y, target.z);
+      if (curr == block) return;
       target.chunk.set(target.x, target.y, target.z, block);
+      target.chunk.meshDirty = true;
       var currHeight = target.chunk.heights[Chunk.index2d(target.x, target.y)];
 
       if (block == 0) {
@@ -1698,6 +1746,26 @@
       }
 
       return list;
+    }
+
+    subChunk(x, y, z) {
+      var pc = new SubChunk(x, y, z);
+      pc.map = new Uint8Array(SubChunk.width * SubChunk.height * SubChunk.depth);
+      pc.lights = new Uint8Array(SubChunk.width * SubChunk.height * SubChunk.depth);
+      pc.heights = new Uint8Array(SubChunk.width * SubChunk.height);
+
+      for (var i = x - 1; i < x + 1 + 1; i++) for (var j = y - 1; j < y + 1 + 1; j++) for (var k = z - 1; k < z + 1 + 1; k++) {
+        var block, light, height;
+        var block = this.at(i, j, k);
+        var light = this.light(i, j, k);
+        var height = this.height(i, j);
+        var dstID = pc.index3d(i, j, k);
+        pc.map[dstID] = block;
+        pc.lights[dstID] = light;
+        pc.heights[pc.index2d(i, j)] = height;
+      }
+
+      return pc;
     }
 
     padded(chunk) {
@@ -6022,6 +6090,7 @@
         mesh: transparent.combine()
       };
       this.transparent.length = this.transparent.mesh.length / transparent.attrs;
+      this.triangles = this.transparent.length + this.unculled.length + this.regular.length;
     }
 
     buffers() {
@@ -6332,7 +6401,7 @@
 
     renderCross(chunk, block, target, x, y, z) {
       var atlas = block.atlas;
-      let topLight = chunk.lights[PaddedChunk.index3d(x, y, z)] * 4;
+      let topLight = chunk.light(x, y, z) * 4;
       var tx = atlas % 16 * texScale + tlPadding,
           ty = Math.floor(atlas / 16) * texScale + tlPadding; // nw to se
 
@@ -6349,6 +6418,60 @@
       target.add7(x + 0, y + 1, z, topLight, tx, ty + texWidth, atlas);
       target.add7(x + 1, y + 0, z, topLight, tx + texWidth, ty + texWidth, atlas);
       target.add7(x + 1, y + 0, z + 1, topLight, tx + texWidth, ty, atlas);
+    }
+
+    tesselate(chunk) {
+      var w = Chunk.width,
+          h = Chunk.height;
+      var pos = 0,
+          wh = w * h;
+
+      for (var _x = 0; _x < wh; _x++) {
+        pos = (pos + 1687194493) % wh;
+        var x = pos % w,
+            y = Math.floor(pos / w);
+        let column = chunk.heights[PaddedChunk.index2d(x, y)] + 1;
+
+        for (let z = column; z > 0; z--) {
+          this.addVoxel(x, y, z, chunk);
+        }
+      }
+
+      return this.finish(chunk.x, chunk.y);
+    }
+
+    finish(x, y) {
+      return new ChunkMesh(x, y, this.regular, this.unculled, this.transparent);
+    }
+
+    addVoxel(x, y, z, chunk) {
+      let here = chunk.at(x, y, z);
+      if (here == 0) return;
+      let block = blocks[here];
+      let target = this.regular;
+      if (block.culls == 1) target = this.transparent;
+      if (block.culls == 2) target = this.unculled; // contains a cross
+
+      if (block.culls === 2 && block.type == 1) {
+        this.renderCross(chunk, block, target, x, y, z);
+        return;
+      }
+
+      for (let face = 0; face < 6; face++) {
+        let lookup = faces[face];
+        let other = chunk.at(x + lookup.offsetX, y + lookup.offsetY, z + lookup.offsetZ);
+        let occ = this.occludes(other, here);
+
+        if (occ === 2) {
+          occ = lookup.offsetX < 0 || lookup.offsetY < 0 || lookup.offsetZ < 0 ? 0 : 1;
+        }
+
+        if (occ !== 0) {
+          continue;
+        }
+
+        this.renderFace(chunk, block, target, x, y, z, face);
+      }
     }
 
     renderFace(chunk, block, target, x, y, z, face) {
@@ -6409,58 +6532,14 @@
       }
     }
 
-    tesselate(chunk) {
-      var w = Chunk.width,
-          h = Chunk.height;
-      var pos = 0,
-          wh = w * h;
-
-      for (var _x = 0; _x < wh; _x++) {
-        pos = (pos + 1687194493) % wh;
-        var x = pos % w,
-            y = Math.floor(pos / w);
-        let column = chunk.heights[PaddedChunk.index2d(x, y)] + 1;
-
-        for (let z = column; z > 0; z--) {
-          let here = chunk.at(x, y, z);
-          if (here == 0) continue;
-          let block = blocks[here];
-          let target = this.regular;
-          if (block.culls == 1) target = this.transparent;
-          if (block.culls == 2) target = this.unculled; // contains a cross
-
-          if (block.culls === 2 && block.type == 1) {
-            this.renderCross(chunk, block, target, x, y, z);
-            continue;
-          }
-
-          for (let face = 0; face < 6; face++) {
-            let lookup = faces[face];
-            let other = chunk.at(x + lookup.offsetX, y + lookup.offsetY, z + lookup.offsetZ);
-            let occ = this.occludes(other, here);
-
-            if (occ === 2) {
-              occ = lookup.offsetX < 0 || lookup.offsetY < 0 || lookup.offsetZ < 0 ? 0 : 1;
-            }
-
-            if (occ !== 0) {
-              continue;
-            }
-
-            this.renderFace(chunk, block, target, x, y, z, face);
-          }
-        }
-      }
-
-      return new ChunkMesh(chunk.x, chunk.y, this.regular, this.unculled, this.transparent);
-    }
-
   }
   class ChunkSurfaceMaterial {
     constructor() {
       this.gl = null;
       this.program = {};
       this.modelViewMatrix = create$1();
+      this.highlight = null;
+      this.tesselator = new BrilliantSurfaceExtractor();
     }
 
     context(newgl) {
@@ -6533,7 +6612,6 @@
     blit(chunk) {
       if (chunk.uploaded) return;
       chunk.uploaded = true;
-      console.log("uploading", chunk);
       let attrs = 7;
       let type = this.gl.UNSIGNED_BYTE;
       let size = 1;
@@ -6606,24 +6684,17 @@
       chunk.transparent.vbo = null;
     }
 
-    render(renderEvent, chunks) {
+    render(renderEvent, chunkMap) {
+      var chunks = chunkMap.chunks;
       var time = Date.now() / 25000 % 1;
       copy(this.modelViewMatrix, renderEvent.viewMatrix);
-      var maximumRender = 40000;
+      var maximumRender = 10000;
       var rList = [];
 
       for (let chunk of chunks.values()) {
         if (!chunk.uploaded) continue;
 
         if (chunk.unculled.length + chunk.regular.length + chunk.transparent.length == 0) {
-          continue;
-        }
-
-        if (chunk.renderSize < 1) {
-          chunk.renderSize += .02;
-        }
-
-        if (Math.floor(chunk.renderSize) == 0) {
           continue;
         }
 
@@ -6693,6 +6764,40 @@
         this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.transparent.vao);
         this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.transparent.length));
+      }
+
+      if (this.highlight) {
+        // debugger
+        let {
+          x,
+          y,
+          z
+        } = this.highlight;
+        var tempChunk = chunkMap.subChunk(x, y, z); // debugger
+
+        this.tesselator.addVoxel(0, 0, 0, tempChunk);
+        var chunk = this.tesselator.finish();
+
+        if (chunk.triangles > 0) {
+          this.blit(chunk);
+          var translation = create$2();
+          set(translation, x, y, z);
+          var modelViewMatrix = clone(renderEvent.viewMatrix);
+          translate(modelViewMatrix, modelViewMatrix, translation);
+          var program = chunk.regular.length ? "regular" : chunk.transparent.length ? "transparent" : "unculled";
+          this.gl.enable(this.gl.POLYGON_OFFSET_FILL);
+          this.gl.polygonOffset(-1.0, -.1);
+          this.gl.blendFunc(this.gl.CONSTANT_COLOR, this.gl.SRC_COLOR);
+          this.gl.depthFunc(this.gl.LEQUAL); // this.gl.enable(this.gl.CULL_FACE)
+
+          this.gl.useProgram(this[program].program);
+          this.gl.uniformMatrix4fv(this[program].uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+          this.gl.uniformMatrix4fv(this[program].uniformLocations.modelViewMatrix, false, modelViewMatrix);
+          this.gl.bindVertexArray(chunk[program].vao);
+          this.gl.drawArrays(this.gl.TRIANGLES, 0, chunk[program].length);
+          this.gl.disable(this.gl.POLYGON_OFFSET_FILL);
+          this.free(chunk);
+        }
       }
 
       return rList.length;
@@ -6769,7 +6874,7 @@
         vec2 tex = clamp(vTextureCoord, 0.0, 1.0);
         #endif
 
-        vec4 textureColor = texture(uSampler, vec3(tex, vAtlas));
+        vec4 textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
         float lighting = vLight;
         // FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
         #ifdef TRANSPARENT
@@ -7492,7 +7597,8 @@
     backward: "s",
     right: "d",
     left: "a",
-    jump: " " // Player should be initialized when the 0,0 chunk is ready
+    jump: " ",
+    place: "f" // Player should be initialized when the 0,0 chunk is ready
 
   };
   class Player {
@@ -7676,6 +7782,15 @@
         add(this.speed, this.speed, [impulse[0], impulse[1], 0]);
       }
 
+      if (this.inputs.input[bindings.place] && this.targetVoxel) {
+        let {
+          x,
+          y,
+          z
+        } = this.targetVoxel;
+        this.chunkMap.set(x, y, z, 17);
+      }
+
       if (this.onground) this.jetpack = false;
       if (alreadyColliding) this.jetpack = true;
 
@@ -7766,8 +7881,17 @@
           y: vy,
           z: vz
         } = this.targetVoxel;
-        let type = this.chunkMap.at(vx, vy, vz, vx, vy, vz);
-        this.canvas.debug["Looking At"] = JSON.stringify(blocks[type]);
+        let {
+          x: tx,
+          y: ty,
+          z: tz,
+          chunk
+        } = this.chunkMap.locate(vx, vy, vz);
+        let type = chunk.at(tx, ty, tz);
+        this.canvas.debug["Looking At"] = JSON.stringify({
+          "block": blocks[type],
+          "dirty": chunk.meshDirty
+        });
       } else {
         this.canvas.debug["Looking At"] = "nothing";
       }
@@ -7809,12 +7933,13 @@
 
     render(ev) {
       // debugger
-      this.canvas.debug.Chunks = this.renderer.render(ev, this.chunks.chunks) + "/" + this.chunks.chunks.size;
+      this.canvas.debug.Chunks = this.renderer.render(ev, this.chunks) + "/" + this.chunks.chunks.size;
     }
 
     postRender() {
       // let the host know the area we're in
       if (!this.player) return;
+      this.renderer.highlight = this.player.targetVoxel;
       let [x, y, z] = this.player.position;
       var center = this.player.currentChunk;
 
@@ -7835,12 +7960,12 @@
         } // update the status of chunks in our viewing range
 
 
-        var toSend = this.chunks.spiral(center.x, center.y, 38);
+        var toSend = this.chunks.spiral(center.x, center.y, 39);
 
         for (var i = 0; i < toSend.length; i++) {
           let chunk = toSend[i];
           chunk.isHot = true;
-          chunk.isVisible = dist$1([center.x, center.y], [chunk.x, chunk.y]) <= 25;
+          chunk.isVisible = dist$1([center.x, center.y], [chunk.x, chunk.y]) <= 17;
         }
       } // update the visibility flag
 
@@ -7871,6 +7996,14 @@
             chunk.meshReady = false;
           }
 
+          if (chunk.meshUploaded) {
+            chunk.renderSize += .02;
+
+            if (chunk.renderSize > 1) {
+              chunk.renderSize = 1;
+            }
+          }
+
           if (chunk.meshDirty && !chunk.meshPending) {
             var padded = this.chunks.padded(chunk);
             this.work({
@@ -7883,9 +8016,15 @@
         }
 
         if (chunk.shouldHide) {
-          if (chunk.meshUploaded) this.renderer.free(chunk);
-          chunk.meshUploaded = false;
-          chunk.meshDirty = true;
+          if (chunk.meshUploaded) {
+            chunk.renderSize -= .02;
+
+            if (chunk.renderSize < 0) {
+              this.renderer.free(chunk);
+              chunk.meshUploaded = false;
+              chunk.meshDirty = true;
+            }
+          }
         } // clean this chunk up entirely
 
 
@@ -7958,8 +8097,10 @@
           chunk.meshPending = false;
           if (!chunk.meshUploaded) return; // dont log the normal case
 
+          var oldRS = chunk.renderSize;
           this.renderer.free(chunk);
-          chunk.meshUploaded = false;
+          this.renderer.blit(chunk);
+          chunk.renderSize = oldRS;
           break;
 
         default:
