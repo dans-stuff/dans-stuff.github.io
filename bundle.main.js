@@ -5197,7 +5197,7 @@
     },
     "forest": {
       "weight": 2,
-      "height": -.04
+      "height": +.03
     },
     "ocean": {
       "weight": 1,
