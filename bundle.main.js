@@ -1404,42 +1404,6 @@
     culls: 3,
     illumination: 0
   }];
-  const faceAttrs = {
-    0: {
-      mirror: true
-    },
-    1: {
-      mirror: true
-    },
-    2: {
-      mirror: true
-    },
-    3: {},
-    21: {
-      mirror: true
-    },
-    28: {},
-    32: {},
-    33: {},
-    34: {},
-    39: {},
-    18: {},
-    50: {},
-    52: {
-      mirror: true
-    },
-    64: {
-      mirror: true
-    },
-    78: {
-      mirror: true
-    },
-    116: {},
-    142: {
-      mirror: true
-    },
-    222: {}
-  };
 
   // It also provides static methods/values concerning chunks
 
@@ -6118,10 +6082,9 @@
     return true;
   }
 
-  const textureFilename = "hq.png";
-  const mirror = false;
-  const cornerBonus = 1;
-  const maximumLight = 17;
+  const textureFilename = "terrain.png";
+  const atlasOverride = 0;
+  const greedy = true;
   class ChunkMesh {
     constructor(x, y, regular, unculled, transparent) {
       this.x = x;
@@ -6228,7 +6191,7 @@
       x: 0,
       y: 0,
       z: 1,
-      aos: [0, 6, 7],
+      aos: [6, 7, 0],
       masks: [4, 3]
     },
     pt3: {
@@ -6255,7 +6218,7 @@
       x: 1,
       y: 1,
       z: 1,
-      aos: [0, 6, 7],
+      aos: [6, 7, 0],
       masks: [4, 2]
     },
     pt2: {
@@ -6289,14 +6252,14 @@
       x: 0,
       y: 1,
       z: 1,
-      aos: [0, 6, 7],
+      aos: [6, 7, 0],
       masks: [4, 3]
     },
     pt2: {
       x: 1,
       y: 1,
       z: 1,
-      aos: [0, 2, 1],
+      aos: [0, 1, 2],
       masks: [4, 1]
     },
     pt3: {
@@ -6323,14 +6286,14 @@
       x: 0,
       y: 0,
       z: 1,
-      aos: [0, 2, 1],
+      aos: [0, 1, 2],
       masks: [4, 0]
     },
     pt2: {
       x: 0,
       y: 1,
       z: 1,
-      aos: [0, 6, 7],
+      aos: [6, 7, 0],
       masks: [4, 2]
     },
     pt3: {
@@ -6357,14 +6320,14 @@
       x: 0,
       y: 0,
       z: 1,
-      aos: [0, 6, 7],
+      aos: [6, 7, 0],
       masks: [0, 3]
     },
     pt2: {
       x: 1,
       y: 0,
       z: 1,
-      aos: [0, 2, 1],
+      aos: [0, 1, 2],
       masks: [0, 1]
     },
     pt3: {
@@ -6423,12 +6386,20 @@
   class BrilliantSurfaceExtractor {
     constructor() {
       this.method = "random";
+      this.ao = 1;
+      this.fancy = true;
       texScale = 0;
       texWidth = 1;
       tlPadding = 0;
       this.unculled = new MeshBuilder(5000, 7);
       this.regular = new MeshBuilder(5000, 7);
       this.transparent = new MeshBuilder(5000, 7);
+      this.targets = [this.regular, this.transparent, this.unculled];
+      this.faceBuffer = {};
+
+      for (var face = 0; face < 6; face++) {
+        this.faceBuffer[face] = new Uint32Array(Chunk.width * Chunk.height * Chunk.depth);
+      }
     }
 
     occludes(check, targetID) {
@@ -6489,23 +6460,21 @@
       return this.finish(chunk.x, chunk.y);
     }
 
-    finish(x, y) {
-      return new ChunkMesh(x, y, this.regular, this.unculled, this.transparent);
-    }
-
     addVoxel(x, y, z, chunk) {
       let here = chunk.at(x, y, z);
       if (here == 0) return;
       let block = blocks[here];
-      let target = this.regular;
-      if (block.culls == 1) target = this.transparent;
-      if (block.culls == 2) target = this.unculled; // contains a cross
+      let targetID = 0;
+      if (block.culls == 1) targetID = 1;
+      if (block.culls == 2) targetID = 2; // contains a cross
 
       if (block.culls === 2 && block.type == 1) {
+        let target = this.targets[targetID];
         this.renderCross(chunk, block, target, x, y, z);
         return;
       }
 
+      if (!this.fancy) targetID = 0;
       let occlusions = [true, true, true, true, true, true];
 
       for (let face = 0; face < 6; face++) {
@@ -6514,7 +6483,11 @@
         let occ = this.occludes(other, here);
 
         if (occ === 2) {
-          occ = lookup.offsetX < 0 || lookup.offsetY < 0 || lookup.offsetZ < 0 ? 0 : 1;
+          if (this.fancy == 1) {
+            occ = lookup.offsetX < 0 || lookup.offsetY < 0 || lookup.offsetZ < 0 ? 0 : 1;
+          } else {
+            occ = true;
+          }
         }
 
         if (occ !== 0) {
@@ -6526,88 +6499,183 @@
 
       for (let face = 0; face < 6; face++) {
         if (occlusions[face]) continue;
-        this.renderFace(chunk, block, target, x, y, z, face, occlusions);
+        var faceData = this.faceData(chunk, block, x, y, z, face, occlusions);
+        faceData = (faceData << 2) + targetID;
+        this.faceBuffer[face][Chunk.index3d(x, y, z)] = faceData;
+      }
+    }
+
+    finish(chunkX, chunkY) {
+      var w = Chunk.width,
+          h = Chunk.height,
+          d = Chunk.depth;
+      let axis = {
+        0: [[1, 0, 0, w], [0, 0, 1, d], [0, 1, 0, h]],
+        1: [[0, 1, 0, h], [0, 0, 1, d], [1, 0, 0, w]],
+        2: [[1, 0, 0, w], [0, 0, 1, d], [0, 1, 0, h]],
+        3: [[0, 1, 0, h], [0, 0, 1, d], [1, 0, 0, w]],
+        4: [[1, 0, 0, w], [0, 1, 0, h], [0, 0, 1, d]],
+        5: [[0, 1, 0, h], [1, 0, 0, w], [0, 0, 1, d]]
+      };
+
+      for (let face = 0; face < 6; face++) {
+        let [axis1, axis2, axis3] = axis[face];
+
+        for (var i = 0; i < axis3[3]; i++) {
+          for (var j = 0; j < axis2[3]; j++) {
+            for (var k = 0; k < axis1[3]; k++) {
+              let x = i * axis3[0] + j * axis2[0] + k * axis1[0];
+              let y = i * axis3[1] + j * axis2[1] + k * axis1[1];
+              let z = i * axis3[2] + j * axis2[2] + k * axis1[2];
+              let id = Chunk.index3d(x, y, z);
+              let faceData = this.faceBuffer[face][id];
+              if (!faceData) continue; // debugger
+
+              let primary = 1; // expand along primary axis as much as possible
+
+              while (k + primary < axis1[3] && greedy) {
+                let id = Chunk.index3d(x + primary * axis1[0], y + primary * axis1[1], z + primary * axis1[2]);
+                let thisFaceData = this.faceBuffer[face][id];
+                if (thisFaceData != faceData) break;
+                this.faceBuffer[face][id] = 0;
+                primary++;
+              } // then expand along the secondary axis
+
+
+              let secondary = 1;
+
+              while (j + secondary < axis2[3] && greedy) {
+                let ok = true;
+
+                for (let _p = 0; _p < primary; _p++) {
+                  let id = Chunk.index3d(x + _p * axis1[0] + secondary * axis2[0], y + _p * axis1[1] + secondary * axis2[1], z + _p * axis1[2] + secondary * axis2[2]);
+                  let thisFaceData = this.faceBuffer[face][id];
+                  if (thisFaceData == faceData) continue;
+                  ok = false;
+                  break;
+                }
+
+                if (!ok) break;
+
+                for (let _p = 0; _p < primary; _p++) {
+                  let id = Chunk.index3d(x + _p * axis1[0] + secondary * axis2[0], y + _p * axis1[1] + secondary * axis2[1], z + _p * axis1[2] + secondary * axis2[2]);
+                  this.faceBuffer[face][id] = 0;
+                }
+
+                secondary++;
+              }
+
+              let _w = primary * axis1[0] + secondary * axis2[0] + 1 * axis3[0];
+
+              let _h = primary * axis1[1] + secondary * axis2[1] + 1 * axis3[1];
+
+              let _d = primary * axis1[2] + secondary * axis2[2] + 1 * axis3[2];
+
+              this.renderFace(x, y, z, _w, _h, _d, primary, secondary, faceData, face);
+              k += primary - 1;
+            }
+          }
+        }
+
+        this.faceBuffer[face].fill(0);
+      }
+
+      return new ChunkMesh(chunkX, chunkY, this.regular, this.unculled, this.transparent);
+    } // render a quad to the buffer at x,y,z, of size w,h,d and texture scale txs, tys
+
+
+    renderFace(x, y, z, w, h, d, txs, tys, faceData, face) {
+      let atlas = faceData >>> 22 & 255;
+      let pt1 = faceData >>> 17 & 31;
+      let pt2 = faceData >>> 12 & 31;
+      let pt3 = faceData >>> 7 & 31;
+      let pt4 = faceData >>> 2 & 31;
+      let target = this.targets[faceData >>> 0 & 3];
+      let tx = atlas % 16 * texScale + tlPadding,
+          ty = Math.floor(atlas / 16) * texScale + tlPadding;
+
+      if ((txs > 1 || tys > 1) && atlasOverride) {
+        atlas =  atlas;
+      }
+
+      let lookup = faces[face];
+      let tw = texWidth * txs,
+          th = texWidth * tys;
+
+      if (pt1 + pt4 < pt2 + pt3) {
+        target.add7(x + lookup.pt1.x * w, y + lookup.pt1.y * h, z + lookup.pt1.z * d, pt1, tx, ty, atlas);
+        target.add7(x + lookup.pt2.x * w, y + lookup.pt2.y * h, z + lookup.pt2.z * d, pt2, tx + tw, ty, atlas);
+        target.add7(x + lookup.pt3.x * w, y + lookup.pt3.y * h, z + lookup.pt3.z * d, pt3, tx, ty + th, atlas);
+        target.add7(x + lookup.pt3.x * w, y + lookup.pt3.y * h, z + lookup.pt3.z * d, pt3, tx, ty + th, atlas);
+        target.add7(x + lookup.pt2.x * w, y + lookup.pt2.y * h, z + lookup.pt2.z * d, pt2, tx + tw, ty, atlas);
+        target.add7(x + lookup.pt4.x * w, y + lookup.pt4.y * h, z + lookup.pt4.z * d, pt4, tx + tw, ty + th, atlas);
+      } else {
+        target.add7(x + lookup.pt2.x * w, y + lookup.pt2.y * h, z + lookup.pt2.z * d, pt2, tx + tw, ty, atlas);
+        target.add7(x + lookup.pt4.x * w, y + lookup.pt4.y * h, z + lookup.pt4.z * d, pt4, tx + tw, ty + th, atlas);
+        target.add7(x + lookup.pt1.x * w, y + lookup.pt1.y * h, z + lookup.pt1.z * d, pt1, tx, ty, atlas);
+        target.add7(x + lookup.pt1.x * w, y + lookup.pt1.y * h, z + lookup.pt1.z * d, pt1, tx, ty, atlas);
+        target.add7(x + lookup.pt4.x * w, y + lookup.pt4.y * h, z + lookup.pt4.z * d, pt4, tx + tw, ty + th, atlas);
+        target.add7(x + lookup.pt3.x * w, y + lookup.pt3.y * h, z + lookup.pt3.z * d, pt3, tx, ty + th, atlas);
       }
     }
 
     static aoBlendFunc(a, b, c, d) {
-      let res = Math.floor((a + b + c + d) / 4);
-      if (res < 0 || res > maximumLight) debugger;
-      return res;
+      return Math.floor((a + b + c + d) / 4);
     }
 
-    renderFace(chunk, block, target, x, y, z, face, occlusions) {
+    faceData(chunk, block, x, y, z, face, occlusions) {
       let lookup = faces[face];
       let light = chunk.light(x + lookup.offsetX, y + lookup.offsetY, z + lookup.offsetZ);
-      let aos = [0, 0, 0, 0, 0, 0, 0, 0];
 
-      for (let i = 0; i < 8; i++) {
-        let [xo, yo, zo] = lookup.neighbors[i];
-        let lightHere = chunk.light(x + xo, y + yo, z + zo);
-        aos[i] = lightHere;
+      if (this.ao == 0) ;
+
+      let pt1 = light;
+      let pt2 = light;
+      let pt3 = light;
+      let pt4 = light;
+
+      if (this.ao == 1) {
+        var count = 0;
+
+        for (let i = 0; i < 8; i += 2) {
+          // skip corners
+          let [xo, yo, zo] = lookup.neighbors[i];
+          let lightHere = chunk.light(x + xo, y + yo, z + zo);
+          if (lightHere < light) count++;
+        }
+
+        let bonus = -(count > 1 ? 1 : count);
+        pt1 += bonus;
+        pt2 += bonus;
+        pt3 += bonus;
+        pt4 += bonus;
       }
 
-      let pt1 = 10;
-      let pt2 = 10;
-      let pt3 = 10;
-      let pt4 = 10; // ao
+      if (this.ao == 2 || this.ao == 3) {
+        let aos = [light, light, light, light, light, light, light, light]; // loop through all neighbors, no corners if this.ao=2
 
-      pt1 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt1.aos[0]], aos[lookup.pt1.aos[2]], aos[lookup.pt1.aos[1]]);
-      pt2 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt2.aos[0]], aos[lookup.pt2.aos[2]], aos[lookup.pt2.aos[1]]);
-      pt3 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt3.aos[0]], aos[lookup.pt3.aos[2]], aos[lookup.pt3.aos[1]]);
-      pt4 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt4.aos[0]], aos[lookup.pt4.aos[2]], aos[lookup.pt4.aos[1]]); // edge
+        for (let i = 0; i < 8; i += this.ao == 3 ? 1 : 2) {
+          let [xo, yo, zo] = lookup.neighbors[i];
+          let lightHere = chunk.light(x + xo, y + yo, z + zo);
+          aos[i] = lightHere;
+        }
 
-      {
-        if (!occlusions[lookup.pt1.masks[0]] && !occlusions[lookup.pt1.masks[1]]) pt1 += cornerBonus;
-        if (!occlusions[lookup.pt2.masks[0]] && !occlusions[lookup.pt2.masks[1]]) pt2 += cornerBonus;
-        if (!occlusions[lookup.pt3.masks[0]] && !occlusions[lookup.pt3.masks[1]]) pt3 += cornerBonus;
-        if (!occlusions[lookup.pt4.masks[0]] && !occlusions[lookup.pt4.masks[1]]) pt4 += cornerBonus;
+        pt1 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt1.aos[0]], aos[lookup.pt1.aos[2]], aos[lookup.pt1.aos[1]]);
+        pt2 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt2.aos[0]], aos[lookup.pt2.aos[2]], aos[lookup.pt2.aos[1]]);
+        pt3 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt3.aos[0]], aos[lookup.pt3.aos[2]], aos[lookup.pt3.aos[1]]);
+        pt4 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt4.aos[0]], aos[lookup.pt4.aos[2]], aos[lookup.pt4.aos[1]]);
+
+        if (this.ao == 3) {
+          // corner glinting
+          if (!occlusions[lookup.pt1.masks[0]] && !occlusions[lookup.pt1.masks[1]]) pt1 += 1;
+          if (!occlusions[lookup.pt2.masks[0]] && !occlusions[lookup.pt2.masks[1]]) pt2 += 1;
+          if (!occlusions[lookup.pt3.masks[0]] && !occlusions[lookup.pt3.masks[1]]) pt3 += 1;
+          if (!occlusions[lookup.pt4.masks[0]] && !occlusions[lookup.pt4.masks[1]]) pt4 += 1;
+        }
       }
 
       let atlas = block.atlas[face] || 0;
-      let tx = atlas % 16 * texScale + tlPadding,
-          ty = Math.floor(atlas / 16) * texScale + tlPadding;
-      let tw = texWidth,
-          th = texWidth;
-
-      if (faceAttrs[atlas].mirror && mirror) {
-        let a = (quickhash(x * 7) + quickhash(y * 11) + quickhash(z * 13)) % 4;
-        let hFlip = a % 2 == 0,
-            vFlip = a < 2;
-
-        if (hFlip) {
-          tx += tw;
-          tw = -tw;
-        }
-
-        if (vFlip) {
-          ty += th;
-          th = -th;
-        }
-      }
-
-      if (pt1 > maximumLight || pt2 > maximumLight || pt3 > maximumLight || pt4 > maximumLight) {
-        debugger;
-      } // if (pt1 != pt2 && pt1 != pt3 && pt1 != pt4 && pt2 != pt3 && pt2 != pt4 && pt3 != pt4) {
-      // debugger
-      // }
-
-
-      if (pt1 + pt4 < pt2 + pt3) {
-        target.add7(x + lookup.pt1.x, y + lookup.pt1.y, z + lookup.pt1.z, pt1, tx, ty, atlas);
-        target.add7(x + lookup.pt2.x, y + lookup.pt2.y, z + lookup.pt2.z, pt2, tx + tw, ty, atlas);
-        target.add7(x + lookup.pt3.x, y + lookup.pt3.y, z + lookup.pt3.z, pt3, tx, ty + th, atlas);
-        target.add7(x + lookup.pt3.x, y + lookup.pt3.y, z + lookup.pt3.z, pt3, tx, ty + th, atlas);
-        target.add7(x + lookup.pt2.x, y + lookup.pt2.y, z + lookup.pt2.z, pt2, tx + tw, ty, atlas);
-        target.add7(x + lookup.pt4.x, y + lookup.pt4.y, z + lookup.pt4.z, pt4, tx + tw, ty + th, atlas);
-      } else {
-        target.add7(x + lookup.pt2.x, y + lookup.pt2.y, z + lookup.pt2.z, pt2, tx + tw, ty, atlas);
-        target.add7(x + lookup.pt4.x, y + lookup.pt4.y, z + lookup.pt4.z, pt4, tx + tw, ty + th, atlas);
-        target.add7(x + lookup.pt1.x, y + lookup.pt1.y, z + lookup.pt1.z, pt1, tx, ty, atlas);
-        target.add7(x + lookup.pt1.x, y + lookup.pt1.y, z + lookup.pt1.z, pt1, tx, ty, atlas);
-        target.add7(x + lookup.pt4.x, y + lookup.pt4.y, z + lookup.pt4.z, pt4, tx + tw, ty + th, atlas);
-        target.add7(x + lookup.pt3.x, y + lookup.pt3.y, z + lookup.pt3.z, pt3, tx, ty + th, atlas);
-      }
+      return ((((atlas << 5) + pt1 << 5) + pt2 << 5) + pt3 << 5) + pt4;
     }
 
   }
@@ -6893,12 +6961,6 @@
 
   }
 
-  function quickhash(a) {
-    a = a ^ a >> 4;
-    a = (a ^ 0xdeadbeef) + (a << 5);
-    return a ^ a >> 11;
-  }
-
   const chunkShader2 = `
     #ifdef VERT_SHADER
     precision highp float;
@@ -6918,7 +6980,7 @@
     out vec2 vTextureCoord;
     flat out int vAtlas;
 
-    const float gamma = 0.00;
+    const float gamma = 0.2;
     const float maxLight = 17.0;
 
     float inverse_smoothstep( float x ) {
@@ -6975,11 +7037,11 @@
     out vec4 FragColor;
 
     void main(void) {
-        #ifdef TRANSPARENT
+        // #ifdef TRANSPARENT
         vec2 tex = vTextureCoord;
-        #else
-        vec2 tex = clamp(vTextureCoord, 0.0, 1.0);
-        #endif
+        // #else
+        // vec2 tex = clamp(vTextureCoord, 0.0, 1.0);
+        // #endif
 
         vec4 textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
         float lighting = vLight;
@@ -7434,9 +7496,23 @@
       var debugElement = document.createElement("div");
       this.debugElement = debugElement;
       overlay.appendChild(debugElement);
+      var qualityElement = document.createElement("select");
+      var values = ["Low", "Medium", "High", "Best"];
+      qualityElement.name = "Quality Options";
+
+      for (var i = 0; i < values.length; i++) {
+        var option = document.createElement("option");
+        option.value = i;
+        option.text = values[i];
+        qualityElement.appendChild(option);
+      }
+
+      qualityElement.value = 1;
+      this.qualityElement = qualityElement;
+      optionsElement.appendChild(qualityElement);
       var renderDistanceElement = document.createElement("input");
       renderDistanceElement.type = "range";
-      renderDistanceElement.value = 9;
+      renderDistanceElement.value = 7;
       renderDistanceElement.min = 1;
       renderDistanceElement.max = 31;
       renderDistanceElement.step = 1;
@@ -7892,8 +7968,7 @@
       if (this.inputs.input[bindings.backward]) {
         var impulse = fromValues$1(-power, 0);
         rotate(impulse, impulse, [0, 0], this.yaw * Math.PI / 180);
-        add(this.speed, this.speed, [impulse[0], impulse[1], 0]);
-        alreadyColliding = true;
+        add(this.speed, this.speed, [impulse[0], impulse[1], 0]); // alreadyColliding = true
       }
 
       if (this.inputs.input[bindings.left]) {
@@ -8076,6 +8151,15 @@
       let rd = this.canvas.renderDistanceElement.value;
       let [x, y, z] = this.player.position;
       var center = this.player.currentChunk;
+      var q = parseInt(this.canvas.qualityElement.value);
+
+      if (this.cache.quality !== q) {
+        this.cache.quality = q; // debugger
+
+        for (let chunk of this.chunks.chunks.values()) {
+          chunk.meshDirty = true;
+        }
+      }
 
       if (center.id != this.cache.chunkID || rd != this.cache.renderDistance) {
         this.canvas.debug["Render Distance"] = rd;
@@ -8138,7 +8222,8 @@
             var padded = this.chunks.padded(chunk);
             this.work({
               "event": "tesselate",
-              "chunk": padded
+              "chunk": padded,
+              "quality": this.cache.quality
             }, [padded.map.buffer, padded.lights.buffer, padded.heights.buffer]);
             chunk.meshPending = true;
             chunk.meshDirty = false;
@@ -8240,7 +8325,7 @@
           this.renderer.free(chunk);
           this.renderer.blit(chunk);
           chunk.renderSize = oldRS;
-          break;
+          return;
 
         default:
           console.warn("unknown event", ev);
@@ -8327,6 +8412,8 @@
           chunk.map = ev.chunk.map;
           chunk.lights = ev.chunk.lights;
           chunk.heights = ev.chunk.heights;
+          this.tesselator.ao = ev.quality;
+          this.tesselator.fancy = ev.quality != 0;
           var cm = this.tesselator.tesselate(chunk);
           this.pipe({
             "event": "tesselated",
