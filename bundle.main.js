@@ -1301,90 +1301,108 @@
 
   const blocks = [{
     name: "air",
-    culls: 0
+    culls: 0,
+    illumination: 1
   }, {
     name: "stone",
     color: [0.3, 0.32, 0.29],
     atlas: [1, 1, 1, 1, 1, 1],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }, {
     name: "grass",
     color: [0.376, 0.501, 0.219],
     atlas: [3, 3, 3, 3, 0, 2],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }, {
     name: "log",
     color: [0.509, 0.321, 0.003],
     atlas: [116, 116, 116, 116, 21, 21],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }, {
     name: "leaf",
     color: [0.376, 0.501, 0.219],
     atlas: [52, 52, 52, 52, 52, 52],
     culls: 2,
+    illumination: 1,
     density: 1,
     type: 0
   }, {
     name: "snow",
     color: [0.376, 0.501, 0.219],
     atlas: [64, 64, 64, 64, 64, 64],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }, {
     name: "dirt",
     color: [0.509, 0.321, 0.003],
     atlas: [2, 2, 2, 2, 2, 2],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }, {
     name: "plant",
     atlas: 28,
     culls: 2,
+    illumination: 1,
     density: 0,
     type: 1
   }, {
     name: "tuft",
     atlas: 39,
     culls: 2,
+    illumination: 1,
     density: 0,
     type: 1
   }, {
     name: "water",
     atlas: [222, 222, 222, 222, 222, 222],
-    culls: 1
+    culls: 1,
+    illumination: 1
   }, {
     name: "sand",
-    atlas: [48, 48, 48, 48, 48, 48],
-    culls: 3
+    atlas: [18, 18, 18, 18, 18, 18],
+    culls: 3,
+    illumination: 0
   }, {
     name: "sandstone",
     atlas: [142, 142, 142, 142, 142, 142],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }, {
     name: "marsh",
     atlas: [78, 78, 78, 78, 78, 78],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }, {
     name: "twig",
     atlas: 55,
     culls: 2,
+    illumination: 1,
     density: 0,
     type: 1
   }, {
     name: "gold",
     // 14
     atlas: [32, 32, 32, 32, 32, 32],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }, {
     name: "iron",
     atlas: [33, 33, 33, 33, 33, 33],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }, {
     name: "coal",
     atlas: [34, 34, 34, 34, 34, 34],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }, {
     name: "diamond",
     atlas: [50, 50, 50, 50, 50, 50],
-    culls: 3
+    culls: 3,
+    illumination: 0
   }];
   const faceAttrs = {
     0: {
@@ -1405,7 +1423,7 @@
     33: {},
     34: {},
     39: {},
-    48: {},
+    18: {},
     50: {},
     52: {
       mirror: true
@@ -1460,7 +1478,12 @@
     }
 
     insideFrustum(frustum) {
-      var bbox = [[this.x * Chunk.width, this.y * Chunk.height, 0], [this.x * Chunk.width + Chunk.width, this.y * Chunk.height + Chunk.height, Chunk.depth]];
+      var pad = 0;
+      var l = 103,
+          h = 120;
+      l = 0;
+      h = Chunk.depth;
+      var bbox = [[this.x * Chunk.width + pad, this.y * Chunk.height + pad, l], [this.x * Chunk.width + Chunk.width - pad, this.y * Chunk.height + Chunk.height - pad, h]];
       return boxFrustum(frustum, bbox);
     } // getScudzik maps 2 integers to uints (generating a chunk ID from chunk X,Y)
 
@@ -1502,8 +1525,11 @@
 
 
     light(x, y, z) {
-      var bonus = this.at(x, y, z) == 0 ? 2 : 1;
-      return this.lights[z + 1 + PaddedChunk.depth * (y + 1 + PaddedChunk.width * (x + 1))] + bonus;
+      var here = this.at(x, y, z);
+      let {
+        illumination
+      } = blocks[here];
+      return this.lights[z + 1 + PaddedChunk.depth * (y + 1 + PaddedChunk.width * (x + 1))] + illumination;
     }
 
     static index3d(x, y, z) {
@@ -1537,8 +1563,7 @@
 
 
     light(x, y, z) {
-      var bonus = this.at(x, y, z) == 0 ? 2 : 1;
-      return this.lights[SubChunk.index3d(x, y, z)] + bonus;
+      return this.lights[SubChunk.index3d(x, y, z)];
     }
 
     index3d(x, y, z) {
@@ -6093,7 +6118,10 @@
     return true;
   }
 
+  const textureFilename = "hq.png";
   const mirror = false;
+  const cornerBonus = 1;
+  const maximumLight = 17;
   class ChunkMesh {
     constructor(x, y, regular, unculled, transparent) {
       this.x = x;
@@ -6193,7 +6221,7 @@
       x: 1,
       y: 0,
       z: 1,
-      aos: [0, 2, 1],
+      aos: [0, 1, 2],
       masks: [4, 1]
     },
     pt2: {
@@ -6207,14 +6235,14 @@
       x: 1,
       y: 0,
       z: 0,
-      aos: [2, 4, 3],
+      aos: [2, 3, 4],
       masks: [5, 1]
     },
     pt4: {
       x: 0,
       y: 0,
       z: 0,
-      aos: [4, 6, 5],
+      aos: [4, 5, 6],
       masks: [5, 3]
     },
     offsetX: 0,
@@ -6234,21 +6262,21 @@
       x: 1,
       y: 0,
       z: 1,
-      aos: [0, 2, 1],
+      aos: [0, 1, 2],
       masks: [4, 0]
     },
     pt3: {
       x: 1,
       y: 1,
       z: 0,
-      aos: [4, 6, 5],
+      aos: [4, 5, 6],
       masks: [5, 2]
     },
     pt4: {
       x: 1,
       y: 0,
       z: 0,
-      aos: [2, 4, 3],
+      aos: [2, 3, 4],
       masks: [5, 0]
     },
     offsetX: +1,
@@ -6275,14 +6303,14 @@
       x: 0,
       y: 1,
       z: 0,
-      aos: [4, 6, 5],
+      aos: [4, 5, 6],
       masks: [5, 3]
     },
     pt4: {
       x: 1,
       y: 1,
       z: 0,
-      aos: [2, 4, 3],
+      aos: [2, 3, 4],
       masks: [5, 1]
     },
     offsetX: 0,
@@ -6309,14 +6337,14 @@
       x: 0,
       y: 0,
       z: 0,
-      aos: [2, 4, 3],
+      aos: [2, 3, 4],
       masks: [5, 0]
     },
     pt4: {
       x: 0,
       y: 1,
       z: 0,
-      aos: [4, 6, 5],
+      aos: [4, 5, 6],
       masks: [5, 2]
     },
     offsetX: -1,
@@ -6343,14 +6371,14 @@
       x: 0,
       y: 1,
       z: 1,
-      aos: [4, 6, 5],
+      aos: [4, 5, 6],
       masks: [2, 3]
     },
     pt4: {
       x: 1,
       y: 1,
       z: 1,
-      aos: [2, 4, 3],
+      aos: [2, 3, 4],
       masks: [2, 1]
     },
     offsetX: 0,
@@ -6422,7 +6450,7 @@
 
     renderCross(chunk, block, target, x, y, z) {
       var atlas = block.atlas;
-      let topLight = chunk.light(x, y, z) * 4;
+      let topLight = chunk.light(x, y, z);
       var tx = atlas % 16 * texScale + tlPadding,
           ty = Math.floor(atlas / 16) * texScale + tlPadding; // nw to se
 
@@ -6478,6 +6506,8 @@
         return;
       }
 
+      let occlusions = [true, true, true, true, true, true];
+
       for (let face = 0; face < 6; face++) {
         let lookup = faces[face];
         let other = chunk.at(x + lookup.offsetX, y + lookup.offsetY, z + lookup.offsetZ);
@@ -6491,11 +6521,22 @@
           continue;
         }
 
-        this.renderFace(chunk, block, target, x, y, z, face);
+        occlusions[face] = false;
+      }
+
+      for (let face = 0; face < 6; face++) {
+        if (occlusions[face]) continue;
+        this.renderFace(chunk, block, target, x, y, z, face, occlusions);
       }
     }
 
-    renderFace(chunk, block, target, x, y, z, face) {
+    static aoBlendFunc(a, b, c, d) {
+      let res = Math.floor((a + b + c + d) / 4);
+      if (res < 0 || res > maximumLight) debugger;
+      return res;
+    }
+
+    renderFace(chunk, block, target, x, y, z, face, occlusions) {
       let lookup = faces[face];
       let light = chunk.light(x + lookup.offsetX, y + lookup.offsetY, z + lookup.offsetZ);
       let aos = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -6506,14 +6547,23 @@
         aos[i] = lightHere;
       }
 
-      let pt1 = light,
-          pt2 = light,
-          pt3 = light,
-          pt4 = light;
-      pt1 += aos[lookup.pt1.aos[0]] + aos[lookup.pt1.aos[1]] + aos[lookup.pt1.aos[2]];
-      pt2 += aos[lookup.pt2.aos[0]] + aos[lookup.pt2.aos[1]] + aos[lookup.pt2.aos[2]];
-      pt3 += aos[lookup.pt3.aos[0]] + aos[lookup.pt3.aos[1]] + aos[lookup.pt3.aos[2]];
-      pt4 += aos[lookup.pt4.aos[0]] + aos[lookup.pt4.aos[1]] + aos[lookup.pt4.aos[2]];
+      let pt1 = 10;
+      let pt2 = 10;
+      let pt3 = 10;
+      let pt4 = 10; // ao
+
+      pt1 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt1.aos[0]], aos[lookup.pt1.aos[2]], aos[lookup.pt1.aos[1]]);
+      pt2 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt2.aos[0]], aos[lookup.pt2.aos[2]], aos[lookup.pt2.aos[1]]);
+      pt3 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt3.aos[0]], aos[lookup.pt3.aos[2]], aos[lookup.pt3.aos[1]]);
+      pt4 = BrilliantSurfaceExtractor.aoBlendFunc(light, aos[lookup.pt4.aos[0]], aos[lookup.pt4.aos[2]], aos[lookup.pt4.aos[1]]); // edge
+
+      {
+        if (!occlusions[lookup.pt1.masks[0]] && !occlusions[lookup.pt1.masks[1]]) pt1 += cornerBonus;
+        if (!occlusions[lookup.pt2.masks[0]] && !occlusions[lookup.pt2.masks[1]]) pt2 += cornerBonus;
+        if (!occlusions[lookup.pt3.masks[0]] && !occlusions[lookup.pt3.masks[1]]) pt3 += cornerBonus;
+        if (!occlusions[lookup.pt4.masks[0]] && !occlusions[lookup.pt4.masks[1]]) pt4 += cornerBonus;
+      }
+
       let atlas = block.atlas[face] || 0;
       let tx = atlas % 16 * texScale + tlPadding,
           ty = Math.floor(atlas / 16) * texScale + tlPadding;
@@ -6535,6 +6585,13 @@
           th = -th;
         }
       }
+
+      if (pt1 > maximumLight || pt2 > maximumLight || pt3 > maximumLight || pt4 > maximumLight) {
+        debugger;
+      } // if (pt1 != pt2 && pt1 != pt3 && pt1 != pt4 && pt2 != pt3 && pt2 != pt4 && pt3 != pt4) {
+      // debugger
+      // }
+
 
       if (pt1 + pt4 < pt2 + pt3) {
         target.add7(x + lookup.pt1.x, y + lookup.pt1.y, z + lookup.pt1.z, pt1, tx, ty, atlas);
@@ -6565,7 +6622,7 @@
 
     context(newgl) {
       this.gl = newgl;
-      var allTiles = loadTextureAtlas(this.gl, "texture.png", 256);
+      var allTiles = loadTextureAtlas(this.gl, textureFilename, 256);
       {
         var vertexShader = "#version 300 es\n#define VERT_SHADER\n" + chunkShader2;
         var fragShader = "#version 300 es\n#define FRAG_SHADER\n" + chunkShader2;
@@ -6795,14 +6852,12 @@
       }
 
       if (this.highlight) {
-        // debugger
         let {
           x,
           y,
           z
         } = this.highlight;
-        var tempChunk = chunkMap.subChunk(x, y, z); // debugger
-
+        var tempChunk = chunkMap.subChunk(x, y, z);
         this.tesselator.addVoxel(0, 0, 0, tempChunk);
         var chunk = this.tesselator.finish();
 
@@ -6863,11 +6918,17 @@
     out vec2 vTextureCoord;
     flat out int vAtlas;
 
+    const float gamma = 0.00;
+    const float maxLight = 17.0;
+
+    float inverse_smoothstep( float x ) {
+        return 0.5 - sin(asin(1.0-2.0*x)/3.0);
+    }
+
     void main(void) {
         vec4 pos = uModelViewMatrix * aVertexPosition;
         vec4 realPos = aVertexPosition;
         vec2 tex = aVertexTexture;
-
 
         vAtlas = int(aVertexAtlas);
         #ifdef TRANSPARENT
@@ -6882,23 +6943,28 @@
 
         gl_Position = uProjectionMatrix * uModelViewMatrix * realPos;
 
-        vLight = (aVertexLight + 5.0) / (64.0 + 16.0 + 5.0);
+        vLight = mix(gamma, 1.0, aVertexLight/maxLight);
 
-        bool xo = (mod(pos.x, 2.0)==0.0);
-        bool yo = (mod(pos.y, 2.0)==0.0);
-        // bool zo = (mod(pos.z, 2.0)==0.0);
-        if (xo && (tex.x == 0.0)) {
-            tex.x += 1.0;
-        }
+        // bool xo = (mod(pos.x, 2.0)==0.0);
+        // bool yo = (mod(pos.y, 2.0)==0.0);
+        // // bool zo = (mod(pos.z, 2.0)==0.0);
+        // if (xo && (tex.x == 0.0)) {
+        //     tex.x += 1.0;
+        // }
         
-        vTextureCoord = tex/2.0;
+        vTextureCoord = tex/1.0;
     }
+
+    
+
     #endif 
     
     #ifdef FRAG_SHADER
+    
     precision highp float;
     precision highp int;
     precision highp sampler2DArray;
+    
 
     in float vLight;
     in vec2 vTextureCoord;
@@ -6917,7 +6983,6 @@
 
         vec4 textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
         float lighting = vLight;
-        // FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
         #ifdef TRANSPARENT
             FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
         #else
@@ -6931,6 +6996,8 @@
                 FragColor = vec4(textureColor.rgb * lighting, 1);
             #endif
         #endif
+
+        // FragColor = vec4(lighting,lighting,lighting,1.0);
     }
     #endif
     `;
