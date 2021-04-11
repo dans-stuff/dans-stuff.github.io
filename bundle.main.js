@@ -6384,13 +6384,16 @@
     neighbors: [[0, -1, -1], [1, -1, -1], [1, 0, -1], [1, 1, -1], [0, 1, -1], [-1, 1, -1], [-1, 0, -1], [-1, -1, -1]]
   }];
   class BrilliantSurfaceExtractor {
-    constructor() {
+    constructor(w, h, d) {
       this.method = "random";
       this.ao = 1;
       this.fancy = true;
       texScale = 0;
       texWidth = 1;
       tlPadding = 0;
+      this.width = w;
+      this.height = h;
+      this.depth = d;
       this.unculled = new MeshBuilder(5000, 7);
       this.regular = new MeshBuilder(5000, 7);
       this.transparent = new MeshBuilder(5000, 7);
@@ -6398,7 +6401,7 @@
       this.faceBuffer = {};
 
       for (var face = 0; face < 6; face++) {
-        this.faceBuffer[face] = new Uint32Array(Chunk.width * Chunk.height * Chunk.depth);
+        this.faceBuffer[face] = new Uint32Array(w * h * d);
       }
     }
 
@@ -6505,17 +6508,18 @@
       }
     }
 
+    index3d(x, y, z) {
+      return z + this.depth * (y + this.width * x);
+    }
+
     finish(chunkX, chunkY) {
-      var w = Chunk.width,
-          h = Chunk.height,
-          d = Chunk.depth;
       let axis = {
-        0: [[1, 0, 0, w], [0, 0, 1, d], [0, 1, 0, h]],
-        1: [[0, 1, 0, h], [0, 0, 1, d], [1, 0, 0, w]],
-        2: [[1, 0, 0, w], [0, 0, 1, d], [0, 1, 0, h]],
-        3: [[0, 1, 0, h], [0, 0, 1, d], [1, 0, 0, w]],
-        4: [[1, 0, 0, w], [0, 1, 0, h], [0, 0, 1, d]],
-        5: [[0, 1, 0, h], [1, 0, 0, w], [0, 0, 1, d]]
+        0: [[1, 0, 0, this.width], [0, 0, 1, this.depth], [0, 1, 0, this.height]],
+        1: [[0, 1, 0, this.height], [0, 0, 1, this.depth], [1, 0, 0, this.width]],
+        2: [[1, 0, 0, this.width], [0, 0, 1, this.depth], [0, 1, 0, this.height]],
+        3: [[0, 1, 0, this.height], [0, 0, 1, this.depth], [1, 0, 0, this.width]],
+        4: [[1, 0, 0, this.width], [0, 1, 0, this.height], [0, 0, 1, this.depth]],
+        5: [[0, 1, 0, this.height], [1, 0, 0, this.width], [0, 0, 1, this.depth]]
       };
 
       for (let face = 0; face < 6; face++) {
@@ -6527,14 +6531,14 @@
               let x = i * axis3[0] + j * axis2[0] + k * axis1[0];
               let y = i * axis3[1] + j * axis2[1] + k * axis1[1];
               let z = i * axis3[2] + j * axis2[2] + k * axis1[2];
-              let id = Chunk.index3d(x, y, z);
+              let id = this.index3d(x, y, z);
               let faceData = this.faceBuffer[face][id];
               if (!faceData) continue; // debugger
 
               let primary = 1; // expand along primary axis as much as possible
 
               while (k + primary < axis1[3] && greedy) {
-                let id = Chunk.index3d(x + primary * axis1[0], y + primary * axis1[1], z + primary * axis1[2]);
+                let id = this.index3d(x + primary * axis1[0], y + primary * axis1[1], z + primary * axis1[2]);
                 let thisFaceData = this.faceBuffer[face][id];
                 if (thisFaceData != faceData) break;
                 this.faceBuffer[face][id] = 0;
@@ -6548,7 +6552,7 @@
                 let ok = true;
 
                 for (let _p = 0; _p < primary; _p++) {
-                  let id = Chunk.index3d(x + _p * axis1[0] + secondary * axis2[0], y + _p * axis1[1] + secondary * axis2[1], z + _p * axis1[2] + secondary * axis2[2]);
+                  let id = this.index3d(x + _p * axis1[0] + secondary * axis2[0], y + _p * axis1[1] + secondary * axis2[1], z + _p * axis1[2] + secondary * axis2[2]);
                   let thisFaceData = this.faceBuffer[face][id];
                   if (thisFaceData == faceData) continue;
                   ok = false;
@@ -6558,7 +6562,7 @@
                 if (!ok) break;
 
                 for (let _p = 0; _p < primary; _p++) {
-                  let id = Chunk.index3d(x + _p * axis1[0] + secondary * axis2[0], y + _p * axis1[1] + secondary * axis2[1], z + _p * axis1[2] + secondary * axis2[2]);
+                  let id = this.index3d(x + _p * axis1[0] + secondary * axis2[0], y + _p * axis1[1] + secondary * axis2[1], z + _p * axis1[2] + secondary * axis2[2]);
                   this.faceBuffer[face][id] = 0;
                 }
 
@@ -6685,7 +6689,8 @@
       this.program = {};
       this.modelViewMatrix = create$1();
       this.highlight = null;
-      this.tesselator = new BrilliantSurfaceExtractor();
+      this.tesselator = new BrilliantSurfaceExtractor(Chunk.width, Chunk.height, Chunk.depth);
+      this.smallTesselator = new BrilliantSurfaceExtractor(1, 1, 1);
     }
 
     context(newgl) {
@@ -6926,8 +6931,8 @@
           z
         } = this.highlight;
         var tempChunk = chunkMap.subChunk(x, y, z);
-        this.tesselator.addVoxel(0, 0, 0, tempChunk);
-        var chunk = this.tesselator.finish();
+        this.smallTesselator.addVoxel(0, 0, 0, tempChunk);
+        var chunk = this.smallTesselator.finish();
 
         if (chunk.triangles > 0) {
           this.blit(chunk);
@@ -8404,7 +8409,7 @@
 
         case "start_as_worker":
           this.chunks = new InfiniteChunkMap();
-          this.tesselator = new BrilliantSurfaceExtractor(this.chunks);
+          this.tesselator = new BrilliantSurfaceExtractor(Chunk.width, Chunk.height, Chunk.depth);
           return;
 
         case "tesselate":
