@@ -1411,7 +1411,9 @@
     constructor(x, y) {
       this.x = x;
       this.y = y;
+      this.z = 0;
       this.id = Chunk.getScudzik(x, y);
+      this.bbox = [[x, y, 0], [(x + 1) * Chunk.width + 1, (y + 1) * Chunk.height + 1, Chunk.depth + 1]];
     } // at provides low-level query for a specific value
 
 
@@ -1442,13 +1444,15 @@
     }
 
     insideFrustum(frustum) {
-      var pad = 0;
-      var l = 103,
-          h = 120;
-      l = 0;
-      h = Chunk.depth;
-      var bbox = [[this.x * Chunk.width + pad, this.y * Chunk.height + pad, l], [this.x * Chunk.width + Chunk.width - pad, this.y * Chunk.height + Chunk.height - pad, h]];
-      return boxFrustum(frustum, bbox);
+      // var pad = 0
+      // var l = 103, h = 120
+      // l = 0
+      // h = Chunk.depth
+      // var bbox = [
+      //     [this.x * Chunk.width + pad, this.y * Chunk.height + pad, l],
+      //     [this.x * Chunk.width + Chunk.width - pad, this.y * Chunk.height + Chunk.height - pad, h]
+      // ]
+      return boxFrustum(frustum, this.bbox);
     } // getScudzik maps 2 integers to uints (generating a chunk ID from chunk X,Y)
 
 
@@ -6082,8 +6086,9 @@
     return true;
   }
 
-  const textureFilename = "terrain.png";
-  const atlasOverride = 0;
+  const textureFilename = "rpg.png";
+  const atlasOverride = 0; // optimizations
+
   const greedy = true;
   class ChunkMesh {
     constructor(x, y, regular, unculled, transparent) {
@@ -6403,6 +6408,35 @@
       for (var face = 0; face < 6; face++) {
         this.faceBuffer[face] = new Uint32Array(w * h * d);
       }
+
+      this.xStartBuffer = new Uint8Array(w * d);
+      this.yStartBuffer = new Uint8Array(h * d);
+      this.zStartBuffer = new Uint8Array(w * h);
+      this.xEndBuffer = new Uint8Array(w * d);
+      this.yEndBuffer = new Uint8Array(h * d);
+      this.zEndBuffer = new Uint8Array(w * h);
+      this.startBuffers = {
+        0: this.xStartBuffer,
+        1: this.yStartBuffer,
+        2: this.xStartBuffer,
+        3: this.yStartBuffer,
+        4: this.yStartBuffer,
+        5: this.yStartBuffer
+      };
+      this.endBuffers = {
+        0: this.xEndBuffer,
+        1: this.yEndBuffer,
+        2: this.xEndBuffer,
+        3: this.yEndBuffer,
+        4: this.yEndBuffer,
+        5: this.yEndBuffer
+      };
+      this.xStartBuffer.fill(w);
+      this.yStartBuffer.fill(h);
+      this.zStartBuffer.fill(d);
+      this.xEndBuffer.fill(0);
+      this.yEndBuffer.fill(0);
+      this.zEndBuffer.fill(0);
     }
 
     occludes(check, targetID) {
@@ -6448,6 +6482,12 @@
           h = Chunk.height;
       var pos = 0,
           wh = w * h;
+      this.bounds = {
+        x: [w, 0],
+        y: [h, 0],
+        z: [Chunk.depth, 0]
+      };
+      this.trackBounds = true;
 
       for (var _x = 0; _x < wh; _x++) {
         pos = (pos + 1687194493) % wh;
@@ -6460,34 +6500,37 @@
         }
       }
 
-      return this.finish(chunk.x, chunk.y);
+      return {
+        "mesh": this.finish(chunk.x, chunk.y),
+        "bounds": this.bounds
+      };
     }
 
     addVoxel(x, y, z, chunk) {
       let here = chunk.at(x, y, z);
       if (here == 0) return;
-      let block = blocks[here];
-      let targetID = 0;
-      if (block.culls == 1) targetID = 1;
-      if (block.culls == 2) targetID = 2; // contains a cross
+      let block = blocks[here]; // contains a cross
 
       if (block.culls === 2 && block.type == 1) {
-        let target = this.targets[targetID];
+        let target = this.targets[2];
         this.renderCross(chunk, block, target, x, y, z);
         return;
       }
 
-      if (!this.fancy) targetID = 0;
-      let occlusions = [true, true, true, true, true, true];
+      let occlusions;
 
       for (let face = 0; face < 6; face++) {
-        let lookup = faces[face];
-        let other = chunk.at(x + lookup.offsetX, y + lookup.offsetY, z + lookup.offsetZ);
+        let {
+          offsetX,
+          offsetY,
+          offsetZ
+        } = faces[face];
+        let other = chunk.at(x + offsetX, y + offsetY, z + offsetZ);
         let occ = this.occludes(other, here);
 
         if (occ === 2) {
           if (this.fancy == 1) {
-            occ = lookup.offsetX < 0 || lookup.offsetY < 0 || lookup.offsetZ < 0 ? 0 : 1;
+            occ = offsetX < 0 || offsetY < 0 || offsetZ < 0 ? 0 : 1;
           } else {
             occ = true;
           }
@@ -6497,14 +6540,37 @@
           continue;
         }
 
+        if (!occlusions) occlusions = [true, true, true, true, true, true];
         occlusions[face] = false;
       }
+
+      if (!occlusions) return;
+      let targetID = 0;
+      if (block.culls == 1) targetID = 1;
+      if (block.culls == 2) targetID = 2;
+      if (!this.fancy) targetID = 0;
+      let index = Chunk.index3d(x, y, z);
 
       for (let face = 0; face < 6; face++) {
         if (occlusions[face]) continue;
         var faceData = this.faceData(chunk, block, x, y, z, face, occlusions);
         faceData = (faceData << 2) + targetID;
-        this.faceBuffer[face][Chunk.index3d(x, y, z)] = faceData;
+        this.faceBuffer[face][index] = faceData;
+      }
+
+      if ( this.trackBounds) {
+        if (x < this.bounds.x[0]) this.bounds.x[0] = x;
+        if (y < this.bounds.y[0]) this.bounds.y[0] = y;
+        if (z < this.bounds.z[0]) this.bounds.z[0] = z;
+        if (x + 1 > this.bounds.x[1]) this.bounds.x[1] = x + 1;
+        if (y + 1 > this.bounds.y[1]) this.bounds.y[1] = y + 1;
+        if (z + 1 > this.bounds.z[1]) this.bounds.z[1] = z + 1;
+        if (this.xStartBuffer[this.index2d(y, z)] > x) this.xStartBuffer[this.index2d(y, z)] = x;
+        if (this.yStartBuffer[this.index2d(x, z)] > y) this.yStartBuffer[this.index2d(x, z)] = y;
+        if (this.zStartBuffer[this.index2d(y, x)] > z) this.zStartBuffer[this.index2d(y, x)] = z;
+        if (this.xEndBuffer[this.index2d(y, z)] < x + 1) this.xEndBuffer[this.index2d(y, z)] = x + 1;
+        if (this.yEndBuffer[this.index2d(x, z)] < y + 1) this.yEndBuffer[this.index2d(x, z)] = y + 1;
+        if (this.zEndBuffer[this.index2d(y, x)] < z + 1) this.zEndBuffer[this.index2d(y, x)] = z + 1;
       }
     }
 
@@ -6512,36 +6578,66 @@
       return z + this.depth * (y + this.width * x);
     }
 
+    index2d(x, y) {
+      return y + this.width * x;
+    }
+
     finish(chunkX, chunkY) {
+      this.mergeFaces();
+      this.xStartBuffer.fill(this.width);
+      this.yStartBuffer.fill(this.height);
+      this.zStartBuffer.fill(this.depth);
+      this.xEndBuffer.fill(0);
+      this.yEndBuffer.fill(0);
+      this.zEndBuffer.fill(0);
+      return new ChunkMesh(chunkX, chunkY, this.regular, this.unculled, this.transparent);
+    }
+
+    mergeFaces() {
+      // axis, first is the tightest, third should iterate through the chunk in slices
       let axis = {
         0: [[1, 0, 0, this.width], [0, 0, 1, this.depth], [0, 1, 0, this.height]],
         1: [[0, 1, 0, this.height], [0, 0, 1, this.depth], [1, 0, 0, this.width]],
         2: [[1, 0, 0, this.width], [0, 0, 1, this.depth], [0, 1, 0, this.height]],
         3: [[0, 1, 0, this.height], [0, 0, 1, this.depth], [1, 0, 0, this.width]],
-        4: [[1, 0, 0, this.width], [0, 1, 0, this.height], [0, 0, 1, this.depth]],
-        5: [[0, 1, 0, this.height], [1, 0, 0, this.width], [0, 0, 1, this.depth]]
+        4: [[0, 1, 0, this.height], [1, 0, 0, this.width], [0, 0, 1, this.depth]],
+        5: [[0, 1, 0, this.height], [1, 0, 0, this.width], [0, 0, 1, this.depth]] // dimension-generic face merging
+        // it has to have slightly special behaviour for top/bottom faces
+
       };
 
       for (let face = 0; face < 6; face++) {
+        let faceBuffer = this.faceBuffer[face];
         let [axis1, axis2, axis3] = axis[face];
+        let [a3x, a3y, a3z, axis3length] = axis3;
+        let [a2x, a2y, a2z, axis2length] = axis2;
+        let [a1x, a1y, a1z, axis1length] = axis1;
 
-        for (var i = 0; i < axis3[3]; i++) {
-          for (var j = 0; j < axis2[3]; j++) {
-            for (var k = 0; k < axis1[3]; k++) {
-              let x = i * axis3[0] + j * axis2[0] + k * axis1[0];
-              let y = i * axis3[1] + j * axis2[1] + k * axis1[1];
-              let z = i * axis3[2] + j * axis2[2] + k * axis1[2];
+        for (var i = 0; i < axis3length; i++) {
+          for (var j = 0; j < axis2length; j++) {
+            var start = 0,
+                end = axis1length;
+
+            {
+              let rangeBufferID = face >= 4 ? this.index2d(j, i) : this.index2d(i, j);
+              start = this.startBuffers[face][rangeBufferID];
+              end = this.endBuffers[face][rangeBufferID];
+            }
+
+            for (var k = start; k < end; k++) {
+              let x = i * a3x + j * a2x + k * a1x;
+              let y = i * a3y + j * a2y + k * a1y;
+              let z = i * a3z + j * a2z + k * a1z;
               let id = this.index3d(x, y, z);
-              let faceData = this.faceBuffer[face][id];
-              if (!faceData) continue; // debugger
-
+              let faceData = faceBuffer[id];
+              if (!faceData) continue;
               let primary = 1; // expand along primary axis as much as possible
 
-              while (k + primary < axis1[3] && greedy) {
-                let id = this.index3d(x + primary * axis1[0], y + primary * axis1[1], z + primary * axis1[2]);
-                let thisFaceData = this.faceBuffer[face][id];
+              while (k + primary < axis1length && greedy) {
+                let id = this.index3d(x + primary * a1x, y + primary * a1y, z + primary * a1z);
+                let thisFaceData = faceBuffer[id];
                 if (thisFaceData != faceData) break;
-                this.faceBuffer[face][id] = 0;
+                faceBuffer[id] = 0;
                 primary++;
               } // then expand along the secondary axis
 
@@ -6552,8 +6648,8 @@
                 let ok = true;
 
                 for (let _p = 0; _p < primary; _p++) {
-                  let id = this.index3d(x + _p * axis1[0] + secondary * axis2[0], y + _p * axis1[1] + secondary * axis2[1], z + _p * axis1[2] + secondary * axis2[2]);
-                  let thisFaceData = this.faceBuffer[face][id];
+                  let id = this.index3d(x + _p * a1x + secondary * a2x, y + _p * a1y + secondary * a2y, z + _p * a1z + secondary * a2z);
+                  let thisFaceData = faceBuffer[id];
                   if (thisFaceData == faceData) continue;
                   ok = false;
                   break;
@@ -6562,29 +6658,27 @@
                 if (!ok) break;
 
                 for (let _p = 0; _p < primary; _p++) {
-                  let id = this.index3d(x + _p * axis1[0] + secondary * axis2[0], y + _p * axis1[1] + secondary * axis2[1], z + _p * axis1[2] + secondary * axis2[2]);
-                  this.faceBuffer[face][id] = 0;
+                  let id = this.index3d(x + _p * a1x + secondary * a2x, y + _p * a1y + secondary * a2y, z + _p * a1z + secondary * a2z);
+                  faceBuffer[id] = 0;
                 }
 
                 secondary++;
               }
 
-              let _w = primary * axis1[0] + secondary * axis2[0] + 1 * axis3[0];
+              let _w = primary * a1x + secondary * a2x + 1 * a3x;
 
-              let _h = primary * axis1[1] + secondary * axis2[1] + 1 * axis3[1];
+              let _h = primary * a1y + secondary * a2y + 1 * a3y;
 
-              let _d = primary * axis1[2] + secondary * axis2[2] + 1 * axis3[2];
+              let _d = primary * a1z + secondary * a2z + 1 * a3z;
 
-              this.renderFace(x, y, z, _w, _h, _d, primary, secondary, faceData, face);
+              this.renderFace(x, y, z, _w, _h, _d, face == 4 ? secondary : primary, face == 4 ? primary : secondary, faceData, face);
               k += primary - 1;
             }
           }
         }
 
-        this.faceBuffer[face].fill(0);
+        faceBuffer.fill(0);
       }
-
-      return new ChunkMesh(chunkX, chunkY, this.regular, this.unculled, this.transparent);
     } // render a quad to the buffer at x,y,z, of size w,h,d and texture scale txs, tys
 
 
@@ -6631,15 +6725,16 @@
       let lookup = faces[face];
       let light = chunk.light(x + lookup.offsetX, y + lookup.offsetY, z + lookup.offsetZ);
 
-      if (this.ao == 0) ;
-
-      let pt1 = light;
-      let pt2 = light;
-      let pt3 = light;
-      let pt4 = light;
+      if (this.ao == 0) {
+        if (face == 0 || face == 1 || face == 2 || face == 3) light -= 1;
+        if (face == 4) light += 1; // can shave off like 2% more but not worth it
+        //light = Math.floor(light/2)*2 
+      }
 
       if (this.ao == 1) {
         var count = 0;
+        if (face == 4) light += 1;
+        if (face == 5) light -= 1;
 
         for (let i = 0; i < 8; i += 2) {
           // skip corners
@@ -6648,12 +6743,15 @@
           if (lightHere < light) count++;
         }
 
-        let bonus = -(count > 1 ? 1 : count);
-        pt1 += bonus;
-        pt2 += bonus;
-        pt3 += bonus;
-        pt4 += bonus;
+        if (count > 0) {
+          light -= 1;
+        }
       }
+
+      let pt1 = light;
+      let pt2 = light;
+      let pt3 = light;
+      let pt4 = light;
 
       if (this.ao == 2 || this.ao == 3) {
         let aos = [light, light, light, light, light, light, light, light]; // loop through all neighbors, no corners if this.ao=2
@@ -6998,15 +7096,15 @@
         vec2 tex = aVertexTexture;
 
         vAtlas = int(aVertexAtlas);
-        #ifdef TRANSPARENT
-        if (vAtlas == 222) {
-            float a = cos((pos.x/5.0)+uTime*6.0*3.1415926538);
-            float b = sin((pos.y/4.0)+uTime*8.0*3.1415926538);
-            tex.x += a/5.0;
-            tex.y += b/5.0;
-            realPos.z += -.18 + (a/20.0 + b/20.0) * .8;
-        }
-        #endif
+        // #ifdef TRANSPARENT
+        // if (vAtlas == 222) {
+        //     float a = cos((pos.x/5.0)+uTime*6.0*3.1415926538);
+        //     float b = sin((pos.y/4.0)+uTime*8.0*3.1415926538);
+        //     tex.x += a/5.0;
+        //     tex.y += b/5.0;
+        //     realPos.z += -.18 + (a/20.0 + b/20.0) * .8;
+        // }
+        // #endif
 
         gl_Position = uProjectionMatrix * uModelViewMatrix * realPos;
 
@@ -8276,7 +8374,7 @@
 
       switch (ev.event) {
         case "profile":
-          console.log("worker did handle", ev.label, "in", ev.ms);
+          // console.log("worker did handle", ev.label, "in", ev.ms)
           this.canvas.addProfile({
             "label": ev.label,
             "ms": ev.ms
@@ -8313,15 +8411,20 @@
           chunk.heights = ev.chunk.heights;
           chunk.biome = ev.chunk.biome;
           chunk.wasSent = true;
-          chunk.meshDirty = true;
-          console.log("free: downloaded chunk", "0" + chunk.id, chunk);
+          chunk.meshDirty = true; // console.log("free: downloaded chunk", "0" + chunk.id, chunk)
+
           return;
 
         case "tesselated":
-          var chunk = this.chunks.getChunk(ev.chunk_mesh.x, ev.chunk_mesh.y);
-          chunk.regular = ev.chunk_mesh.regular;
-          chunk.unculled = ev.chunk_mesh.unculled;
-          chunk.transparent = ev.chunk_mesh.transparent;
+          let {
+            chunk_mesh: mesh,
+            chunk_bounds: bounds
+          } = ev;
+          var chunk = this.chunks.getChunk(mesh.x, mesh.y);
+          chunk.bbox = [[chunk.x * Chunk.width + bounds.x[0], chunk.y * Chunk.height + bounds.y[0], chunk.z * Chunk.depth + bounds.z[0]], [chunk.x * Chunk.width + bounds.x[1], chunk.y * Chunk.height + bounds.y[1], chunk.z * Chunk.depth + bounds.z[1]]];
+          chunk.regular = mesh.regular;
+          chunk.unculled = mesh.unculled;
+          chunk.transparent = mesh.transparent;
           chunk.meshReady = true;
           chunk.meshPending = false;
           if (!chunk.meshUploaded) return; // dont log the normal case
@@ -8340,8 +8443,7 @@
       this.canvas.addProfile({
         "label": "event_" + ev.event,
         "ms": performance.now() - start
-      });
-      console.log("handled", ev);
+      }); // console.log("handled", ev)
     }
 
     tick_host() {
@@ -8419,11 +8521,15 @@
           chunk.heights = ev.chunk.heights;
           this.tesselator.ao = ev.quality;
           this.tesselator.fancy = ev.quality != 0;
-          var cm = this.tesselator.tesselate(chunk);
+          var {
+            mesh,
+            bounds
+          } = this.tesselator.tesselate(chunk);
           this.pipe({
             "event": "tesselated",
-            "chunk_mesh": cm
-          }, cm.buffers());
+            "chunk_mesh": mesh,
+            "chunk_bounds": bounds
+          }, mesh.buffers());
           break;
 
         default:
