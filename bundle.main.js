@@ -8238,7 +8238,7 @@
       this.canvas.debug.Chunks += "draws: " + countDrawCalls + " polys: " + countTris;
     }
 
-    postRender() {
+    step() {
       // let the host know the area we're in
       if (!this.player) return;
       this.renderer.highlight = this.player.targetVoxel;
@@ -8381,7 +8381,7 @@
             gl
           }) => this.renderer.context(gl));
           this.canvas.events.on("render", this.render.bind(this));
-          this.canvas.events.on("postrender", this.postRender.bind(this));
+          this.canvas.events.on("step", this.step.bind(this));
           this.canvas.start();
           this.work({
             "event": "start_as_worker"
