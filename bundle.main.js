@@ -7149,7 +7149,7 @@
         // #endif
 
         vec4 textureColor = vec4(1.0,1.0,1.0,1.0); //
-        textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
+        // textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
         float lighting = vLight;
         #ifdef TRANSPARENT
             FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
