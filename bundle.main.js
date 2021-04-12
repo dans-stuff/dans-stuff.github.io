@@ -7578,7 +7578,7 @@
       this.lastText = "";
       this.profiles = {};
       this.nextRefresh = Date.now();
-      this.events.on("postrender", this.refreshDebugNow.bind(this));
+      this.events.on("step", this.refreshDebugNow.bind(this));
       this.camera = {
         position: create$2(),
         target: [0, 0, 1]
@@ -7759,14 +7759,14 @@
           ms: frameTime
         });
         if (frameTime > 0.001) efps = (efps * 9 + 1000 / frameTime) / 10;
-        lastFrame = start; // this.debug.error = gl.getError()
-
+        lastFrame = start;
         this.debug.FPS = "aaactual: " + Math.floor(fps / fMax) + ", effective: " + Math.floor(efps);
       }
 
-      this.events.on("postrender", function () {
+      this.events.on("step", function () {
+        this.debug.error = gl.getError();
         resize(canvas);
-      });
+      }.bind(this));
       window.requestAnimationFrame(render.bind(this));
     }
 
