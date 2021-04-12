@@ -6793,6 +6793,10 @@
 
     context(newgl) {
       this.gl = newgl;
+      this.gl.disable(this.gl.BLEND);
+      this.gl.enable(this.gl.DEPTH_TEST);
+      this.gl.depthFunc(this.gl.LEQUAL);
+      this.gl.enable(this.gl.CULL_FACE);
       var allTiles = loadTextureAtlas(this.gl, textureFilename, 256);
       var pixel = loadTextureAtlas(this.gl, textureFilename, 1);
       {
@@ -6978,10 +6982,6 @@
       this.gl.useProgram(this.regular.program);
       this.gl.uniformMatrix4fv(this.regular.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
       this.gl.uniform1i(this.regular.uniformLocations.sampler, 0);
-      this.gl.disable(this.gl.BLEND);
-      this.gl.enable(this.gl.DEPTH_TEST);
-      this.gl.depthFunc(this.gl.LEQUAL);
-      this.gl.enable(this.gl.CULL_FACE);
 
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
@@ -7700,6 +7700,9 @@
       var framesThisSecond = 0;
       var lastFPS = lastFrame;
       var fMax = 1;
+      gl.clearColor(0.529, 0.807, 0.921, 1.0); // Clear to black, fully opaque
+
+      gl.clearDepth(1.0); // Clear everything
 
       function render() {
         var start = Date.now();
@@ -7727,7 +7730,7 @@
         }
 
         {
-          document.title = "VOKS 0D";
+          document.title = "VOKS 0 RENDER";
         }
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
@@ -7745,10 +7748,6 @@
           frustrumMatrix: frustrumMatrix
         };
         this.events.emit("prerender", renderEvent);
-        gl.clearColor(0.529, 0.807, 0.921, 1.0); // Clear to black, fully opaque
-
-        gl.clearDepth(1.0); // Clear everything
-
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         this.events.emit("render", renderEvent);
         setTimeout(() => this.events.emit("postrender", {
