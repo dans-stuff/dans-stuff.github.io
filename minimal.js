@@ -1,3 +1,6 @@
+const numFaces = 5000
+const numChunks = 25
+
 window.onload = function () {
     var canvas = document.createElement("canvas")
     canvas.style.float = "right"
@@ -18,6 +21,7 @@ window.onload = function () {
     var aPos = gl.getAttribLocation(program, 'aVertexPosition')
     var aTex = gl.getAttribLocation(program, 'aVertexTexture')
     var uSampler = gl.getUniformLocation(program, 'uSampler')
+    var uView = gl.getUniformLocation(program, 'uView')
 
     // create 2x2 texture
     var texture = gl.createTexture();
@@ -29,15 +33,17 @@ window.onload = function () {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
     // create mesh
+    const perSide = Math.floor(Math.sqrt(numChunks))
     const attrs = 4
     var verts = []
-    for (var i = 0; i < 100000; i++) {
-        var posx = Math.random() * 2 - 1
-        var posy = Math.random() * 2 - 1
+    for (var i = 0; i < numFaces; i++) {
+        var posx = (Math.random() * 2 - 1) / perSide
+        var posy = (Math.random() * 2 - 1) / perSide
+        var size = Math.random() * 0.01
         verts.push(
-            posx - .01, posy - .01, 0, 0,
-            posx + .01, posy - .01, 1, 0,
-            posx + .01, posy + 0.01, 1, 1
+            posx - size, posy - size, 0, 0,
+            posx + size, posy - size, 1, 0,
+            posx + size, posy + size, 1, 1
         )
     }
     var mesh = new Float32Array(verts)
@@ -52,7 +58,6 @@ window.onload = function () {
     gl.enableVertexAttribArray(aPos);
     gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, 4 * attrs, 4 * 2);
     gl.enableVertexAttribArray(aTex);
-
     console.log("any error", gl.getError())
 
     function render() {
@@ -74,8 +79,13 @@ window.onload = function () {
         gl.enable(gl.CULL_FACE)
 
         // render mesh
-        gl.bindVertexArray(vao)
-        gl.drawArrays(gl.TRIANGLES, 0, mesh.length / attrs);
+        for (var i = -1; i < 1; i += 1/perSide) {
+            for (var j = -1; j < 1; j += 1/perSide) {
+                gl.uniform2fv(uView, [i,j])
+                gl.bindVertexArray(vao)
+                gl.drawArrays(gl.TRIANGLES, 0, mesh.length / attrs);
+            }
+        }
     }
     window.requestAnimationFrame(render)
 }
@@ -85,13 +95,15 @@ const vert = `#version 300 es
 precision highp float;
 precision highp sampler2DArray;
 
+uniform vec2 uView;
+
 in vec2 aVertexPosition;
 in vec2 aVertexTexture;
 
 out vec2 vTextureCoord;
 
 void main(void) {
-    gl_Position = vec4(aVertexPosition,0.0,1.0);
+    gl_Position = vec4(aVertexPosition+uView,0.0,1.0);
     vTextureCoord = aVertexTexture;
 }
 `
