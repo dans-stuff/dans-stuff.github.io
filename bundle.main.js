@@ -7750,9 +7750,6 @@
         this.events.emit("prerender", renderEvent);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         this.events.emit("render", renderEvent);
-        setTimeout(() => this.events.emit("postrender", {
-          camera: this.camera
-        }), 1);
         var frameTime = Date.now() - start;
         this.addBenchmark({
           label: "frame_time",
