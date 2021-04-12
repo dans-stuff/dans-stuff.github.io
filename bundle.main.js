@@ -6939,7 +6939,6 @@
 
     render(renderEvent, chunkMap) {
       var chunks = chunkMap.chunks;
-      var time = Date.now() / 25000 % 1;
       copy(this.modelViewMatrix, renderEvent.viewMatrix);
       var maximumRender = 10000;
       var rList = [];
@@ -6994,75 +6993,65 @@
         this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.regular.length));
         this.gl.bindVertexArray(null);
         countTris += Math.floor(chunk.renderSize * chunk.regular.length);
-      }
+      } // this.gl.useProgram(this.unculled.program);
+      // this.gl.uniformMatrix4fv(this.unculled.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+      // this.gl.uniform1i(this.unculled.uniformLocations.sampler, 0);
+      // this.gl.disable(this.gl.CULL_FACE)
+      // for (var i = 0; i < rList.length; i++) {
+      //     var chunk = rList[i]
+      //     if (Math.floor(chunk.renderSize * chunk.unculled.length) == 0) continue
+      //     if (countDrawCalls > maximumRender) break
+      //     countDrawCalls++
+      //     this.gl.uniformMatrix4fv(this.unculled.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
+      //     this.gl.bindVertexArray(chunk.unculled.vao)
+      //     this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.unculled.length));
+      //     this.gl.bindVertexArray(null)
+      //     countTris += Math.floor(chunk.renderSize * chunk.unculled.length)
+      // }
+      // this.gl.useProgram(this.transparent.program);
+      // this.gl.uniformMatrix4fv(this.transparent.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+      // this.gl.uniform1f(this.transparent.uniformLocations.time, time);
+      // this.gl.uniform1i(this.transparent.uniformLocations.sampler, 0);
+      // this.gl.enable(this.gl.BLEND)
+      // this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+      // for (var i = 0; i < rList.length; i++) {
+      //     var chunk = rList[i]
+      //     if (Math.floor(chunk.renderSize * chunk.transparent.length) == 0) continue
+      //     if (countDrawCalls > maximumRender) break
+      //     countDrawCalls++
+      //     this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
+      //     this.gl.bindVertexArray(chunk.transparent.vao)
+      //     this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.transparent.length));
+      //     this.gl.bindVertexArray(null)
+      //     countTris += Math.floor(chunk.renderSize * chunk.transparent.length)
+      // }
+      // if (this.highlight) {
+      //     let { x, y, z } = this.highlight
+      //     var tempChunk = chunkMap.subChunk(x, y, z)
+      //     this.smallTesselator.addVoxel(0, 0, 0, tempChunk)
+      //     var chunk = this.smallTesselator.finish()
+      //     if (chunk.triangles > 0) {
+      //         this.blit(chunk)
+      //         var translation = vec3.create();
+      //         vec3.set(translation, x, y, z);
+      //         var modelViewMatrix = mat4.clone(renderEvent.viewMatrix)
+      //         mat4.translate(modelViewMatrix, modelViewMatrix, translation);
+      //         var program = chunk.regular.length ? "regular" : chunk.transparent.length ? "transparent" : "unculled"
+      //         this.gl.enable(this.gl.POLYGON_OFFSET_FILL);
+      //         this.gl.polygonOffset(-1.0, -.1);
+      //         this.gl.blendFunc(this.gl.CONSTANT_COLOR, this.gl.SRC_COLOR);
+      //         this.gl.depthFunc(this.gl.LEQUAL)
+      //         // this.gl.enable(this.gl.CULL_FACE)
+      //         this.gl.useProgram(this[program].program);
+      //         this.gl.uniformMatrix4fv(this[program].uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+      //         this.gl.uniformMatrix4fv(this[program].uniformLocations.modelViewMatrix, false, modelViewMatrix);
+      //         this.gl.bindVertexArray(chunk[program].vao)
+      //         this.gl.drawArrays(this.gl.TRIANGLES, 0, chunk[program].length);
+      //         this.gl.disable(this.gl.POLYGON_OFFSET_FILL);
+      //         this.free(chunk)
+      //     }
+      // }
 
-      this.gl.useProgram(this.unculled.program);
-      this.gl.uniformMatrix4fv(this.unculled.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
-      this.gl.uniform1i(this.unculled.uniformLocations.sampler, 0);
-      this.gl.disable(this.gl.CULL_FACE);
-
-      for (var i = 0; i < rList.length; i++) {
-        var chunk = rList[i];
-        if (Math.floor(chunk.renderSize * chunk.unculled.length) == 0) continue;
-        if (countDrawCalls > maximumRender) break;
-        countDrawCalls++;
-        this.gl.uniformMatrix4fv(this.unculled.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
-        this.gl.bindVertexArray(chunk.unculled.vao);
-        this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.unculled.length));
-        this.gl.bindVertexArray(null);
-        countTris += Math.floor(chunk.renderSize * chunk.unculled.length);
-      }
-
-      this.gl.useProgram(this.transparent.program);
-      this.gl.uniformMatrix4fv(this.transparent.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
-      this.gl.uniform1f(this.transparent.uniformLocations.time, time);
-      this.gl.uniform1i(this.transparent.uniformLocations.sampler, 0);
-      this.gl.enable(this.gl.BLEND);
-      this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
-
-      for (var i = 0; i < rList.length; i++) {
-        var chunk = rList[i];
-        if (Math.floor(chunk.renderSize * chunk.transparent.length) == 0) continue;
-        if (countDrawCalls > maximumRender) break;
-        countDrawCalls++;
-        this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
-        this.gl.bindVertexArray(chunk.transparent.vao);
-        this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.transparent.length));
-        this.gl.bindVertexArray(null);
-        countTris += Math.floor(chunk.renderSize * chunk.transparent.length);
-      }
-
-      if (this.highlight) {
-        let {
-          x,
-          y,
-          z
-        } = this.highlight;
-        var tempChunk = chunkMap.subChunk(x, y, z);
-        this.smallTesselator.addVoxel(0, 0, 0, tempChunk);
-        var chunk = this.smallTesselator.finish();
-
-        if (chunk.triangles > 0) {
-          this.blit(chunk);
-          var translation = create$2();
-          set(translation, x, y, z);
-          var modelViewMatrix = clone(renderEvent.viewMatrix);
-          translate(modelViewMatrix, modelViewMatrix, translation);
-          var program = chunk.regular.length ? "regular" : chunk.transparent.length ? "transparent" : "unculled";
-          this.gl.enable(this.gl.POLYGON_OFFSET_FILL);
-          this.gl.polygonOffset(-1.0, -.1);
-          this.gl.blendFunc(this.gl.CONSTANT_COLOR, this.gl.SRC_COLOR);
-          this.gl.depthFunc(this.gl.LEQUAL); // this.gl.enable(this.gl.CULL_FACE)
-
-          this.gl.useProgram(this[program].program);
-          this.gl.uniformMatrix4fv(this[program].uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
-          this.gl.uniformMatrix4fv(this[program].uniformLocations.modelViewMatrix, false, modelViewMatrix);
-          this.gl.bindVertexArray(chunk[program].vao);
-          this.gl.drawArrays(this.gl.TRIANGLES, 0, chunk[program].length);
-          this.gl.disable(this.gl.POLYGON_OFFSET_FILL);
-          this.free(chunk);
-        }
-      }
 
       return {
         countDrawCalls: countDrawCalls,
@@ -7620,7 +7609,7 @@
         qualityElement.appendChild(option);
       }
 
-      qualityElement.value = 1;
+      qualityElement.value = 0;
       this.qualityElement = qualityElement;
       optionsElement.appendChild(qualityElement);
       var renderDistanceElement = document.createElement("input");
