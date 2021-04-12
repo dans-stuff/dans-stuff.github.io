@@ -1,4 +1,4 @@
-const numChunks = 9*9
+const numChunks = 1*1
 
 window.onload = function () {
     var canvas = document.createElement("canvas")
