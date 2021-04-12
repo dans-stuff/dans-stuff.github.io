@@ -5945,14 +5945,7 @@
   function loadTextureAtlas(gl, url, num_images) {
     console.assert(isPowerOf2(num_images));
     const texture = gl.createTexture(); // Because images have to be download over the internet
-    // they might take a moment until they are ready.
-    // Until then put a single pixel in the texture so we can
-    // use it immediately. When the image has finished downloading
-    // we'll update the texture with the contents of the image.
-
-    const level = 0;
     const internalFormat = gl.RGBA;
-    const border = 0;
     const srcFormat = gl.RGBA;
     const srcType = gl.UNSIGNED_BYTE;
     var imagesPerRow = Math.sqrt(num_images);
@@ -5972,8 +5965,10 @@
     gl.bindTexture(gl.TEXTURE_2D, texture); // gl.texImage3D(gl.TEXTURE_2D, level, internalFormat,
     //     1, 1, imagesPerRow, border, srcFormat, srcType,
     //     pixels);
+    // gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+    //     1, 1, border, srcFormat, srcType,
+    //     pixels);
 
-    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, 1, 1, border, srcFormat, srcType, pixels);
     console.log("loading in to overwrite pixels", url);
     const image = new Image();
 
@@ -7743,7 +7738,7 @@
         }
 
         {
-          document.title = "VOKS 2D";
+          document.title = "VOKS 0D";
         }
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
