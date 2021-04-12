@@ -6969,9 +6969,9 @@
         return dax * dax + day * day - (dbx * dbx + dby * dby);
       });
       var countDrawCalls = 0,
-          countTris = 0;
-      this.gl.activeTexture(this.gl.TEXTURE0);
-      this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.regular.texture);
+          countTris = 0; // this.gl.activeTexture(this.gl.TEXTURE0);
+      // this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.regular.texture);
+
       this.gl.useProgram(this.regular.program);
       this.gl.uniformMatrix4fv(this.regular.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
       this.gl.disable(this.gl.BLEND);
@@ -7123,8 +7123,6 @@
         vTextureCoord = tex/1.0;
     }
 
-    
-
     #endif 
     
     #ifdef FRAG_SHADER
@@ -7132,7 +7130,6 @@
     precision highp float;
     precision highp int;
     precision highp sampler2DArray;
-    
 
     in float vLight;
     in vec2 vTextureCoord;
@@ -7149,7 +7146,7 @@
         // vec2 tex = clamp(vTextureCoord, 0.0, 1.0);
         // #endif
 
-        vec4 textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
+        vec4 textureColor = vec4(1.0,1.0,1.0,1.0); //texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
         float lighting = vLight;
         #ifdef TRANSPARENT
             FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
@@ -7731,7 +7728,7 @@
         }
 
         {
-          document.title = "VOKS .2";
+          document.title = "VOKS .1";
         }
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
