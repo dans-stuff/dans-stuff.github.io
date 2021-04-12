@@ -7730,7 +7730,7 @@
         }
 
         {
-          document.title = "VOKS 0 RENDER";
+          document.title = "VOKS NEV";
         }
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
