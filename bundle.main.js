@@ -6976,6 +6976,7 @@
       this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.regular.texture);
       this.gl.useProgram(this.regular.program);
       this.gl.uniformMatrix4fv(this.regular.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+      this.gl.uniform1i(this.regular.uniformLocations.sampler, 0);
       this.gl.disable(this.gl.BLEND);
       this.gl.enable(this.gl.DEPTH_TEST);
       this.gl.depthFunc(this.gl.LEQUAL);
@@ -6995,6 +6996,7 @@
 
       this.gl.useProgram(this.unculled.program);
       this.gl.uniformMatrix4fv(this.unculled.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+      this.gl.uniform1i(this.unculled.uniformLocations.sampler, 0);
       this.gl.disable(this.gl.CULL_FACE);
 
       for (var i = 0; i < rList.length; i++) {
@@ -7012,6 +7014,7 @@
       this.gl.useProgram(this.transparent.program);
       this.gl.uniformMatrix4fv(this.transparent.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
       this.gl.uniform1f(this.transparent.uniformLocations.time, time);
+      this.gl.uniform1i(this.transparent.uniformLocations.sampler, 0);
       this.gl.enable(this.gl.BLEND);
       this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
 
@@ -7731,7 +7734,7 @@
         }
 
         {
-          document.title = "VOKS LITE";
+          document.title = "VOKS ZRO";
         }
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
