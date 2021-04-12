@@ -6866,11 +6866,12 @@
       let size = 1;
 
       if (chunk.regular.length > 0) {
+        chunk.regular.vao = this.gl.createVertexArray();
+        this.gl.bindVertexArray(chunk.regular.vao);
         chunk.regular.vbo = this.gl.createBuffer();
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, chunk.regular.vbo);
         this.gl.bufferData(this.gl.ARRAY_BUFFER, chunk.regular.mesh, this.gl.STATIC_DRAW);
-        chunk.regular.vao = this.gl.createVertexArray();
-        this.gl.bindVertexArray(chunk.regular.vao);
+        chunk.regular.mesh = null;
         this.gl.vertexAttribPointer(this.regular.attribLocations.vertexPosition, 3, type, false, attrs * size, 0 * size);
         this.gl.enableVertexAttribArray(this.regular.attribLocations.vertexPosition);
         this.gl.vertexAttribPointer(this.regular.attribLocations.vertexLight, 1, type, false, attrs * size, 3 * size);
@@ -6879,15 +6880,15 @@
         this.gl.enableVertexAttribArray(this.regular.attribLocations.vertexTexture);
         this.gl.vertexAttribPointer(this.regular.attribLocations.vertexAtlas, 1, type, false, attrs * size, 6 * size);
         this.gl.enableVertexAttribArray(this.regular.attribLocations.vertexAtlas);
-        chunk.regular.mesh = null;
       }
 
       if (chunk.unculled.length > 0) {
+        chunk.unculled.vao = this.gl.createVertexArray();
+        this.gl.bindVertexArray(chunk.unculled.vao);
         chunk.unculled.vbo = this.gl.createBuffer();
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, chunk.unculled.vbo);
         this.gl.bufferData(this.gl.ARRAY_BUFFER, chunk.unculled.mesh, this.gl.STATIC_DRAW);
-        chunk.unculled.vao = this.gl.createVertexArray();
-        this.gl.bindVertexArray(chunk.unculled.vao);
+        chunk.unculled.mesh = null;
         this.gl.vertexAttribPointer(this.unculled.attribLocations.vertexPosition, 3, type, false, attrs * size, 0 * size);
         this.gl.enableVertexAttribArray(this.unculled.attribLocations.vertexPosition);
         this.gl.vertexAttribPointer(this.unculled.attribLocations.vertexLight, 1, type, false, attrs * size, 3 * size);
@@ -6896,15 +6897,15 @@
         this.gl.enableVertexAttribArray(this.unculled.attribLocations.vertexTexture);
         this.gl.vertexAttribPointer(this.unculled.attribLocations.vertexAtlas, 1, type, false, attrs * size, 6 * size);
         this.gl.enableVertexAttribArray(this.unculled.attribLocations.vertexAtlas);
-        chunk.unculled.mesh = null;
       }
 
       if (chunk.transparent.length > 0) {
+        chunk.transparent.vao = this.gl.createVertexArray();
+        this.gl.bindVertexArray(chunk.transparent.vao);
         chunk.transparent.vbo = this.gl.createBuffer();
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, chunk.transparent.vbo);
         this.gl.bufferData(this.gl.ARRAY_BUFFER, chunk.transparent.mesh, this.gl.STATIC_DRAW);
-        chunk.transparent.vao = this.gl.createVertexArray();
-        this.gl.bindVertexArray(chunk.transparent.vao);
+        chunk.transparent.mesh = null;
         this.gl.vertexAttribPointer(this.transparent.attribLocations.vertexPosition, 3, type, false, attrs * size, 0 * size);
         this.gl.enableVertexAttribArray(this.transparent.attribLocations.vertexPosition);
         this.gl.vertexAttribPointer(this.transparent.attribLocations.vertexLight, 1, type, false, attrs * size, 3 * size);
@@ -6913,7 +6914,6 @@
         this.gl.enableVertexAttribArray(this.transparent.attribLocations.vertexTexture);
         this.gl.vertexAttribPointer(this.transparent.attribLocations.vertexAtlas, 1, type, false, attrs * size, 6 * size);
         this.gl.enableVertexAttribArray(this.transparent.attribLocations.vertexAtlas);
-        chunk.transparent.mesh = null;
       }
 
       chunk.renderSize = 0;
@@ -6987,6 +6987,7 @@
         this.gl.uniformMatrix4fv(this.regular.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.regular.vao);
         this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.regular.length));
+        this.gl.bindVertexArray(null);
         countTris += Math.floor(chunk.renderSize * chunk.regular.length);
       }
 
@@ -7002,6 +7003,7 @@
         this.gl.uniformMatrix4fv(this.unculled.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.unculled.vao);
         this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.unculled.length));
+        this.gl.bindVertexArray(null);
         countTris += Math.floor(chunk.renderSize * chunk.unculled.length);
       }
 
@@ -7019,6 +7021,7 @@
         this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.transparent.vao);
         this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.transparent.length));
+        this.gl.bindVertexArray(null);
         countTris += Math.floor(chunk.renderSize * chunk.transparent.length);
       }
 
@@ -7728,7 +7731,7 @@
         }
 
         {
-          document.title = "VOKS 2";
+          document.title = "VOKS .2";
         }
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
