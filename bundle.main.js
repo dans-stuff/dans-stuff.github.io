@@ -7629,7 +7629,7 @@
       window.devicePixelRatio = 1;
       var gl =  canvas.getContext("webgl2", {
         alpha: false,
-        antialias: true,
+        antialias: false,
         powerPreference: 'high-performance'
       });
 
@@ -7728,7 +7728,7 @@
         }
 
         {
-          document.title = "Voxel Engine";
+          document.title = "VOKS 2";
         }
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
