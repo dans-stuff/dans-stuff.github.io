@@ -14,7 +14,10 @@ window.onload = function () {
     canvas.height = displayHeight;
 
     // start webgl
-    var gl = canvas.getContext("webgl2", { alpha: false, antialias: false })
+    var gl = canvas.getContext("webgl2", {
+        powerPreference: "high-performance",
+        alpha: false, antialias: false
+    })
     if (!gl) console.log("failed to initialize gl")
 
     var program = initShaderProgram(gl, vert, frag)
@@ -32,32 +35,39 @@ window.onload = function () {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    // create mesh
+    // create chunk meshes
+
+    var chunks = []
     const perSide = Math.floor(Math.sqrt(numChunks))
-    const attrs = 4
-    var verts = []
-    for (var i = 0; i < numFaces; i++) {
-        var posx = (Math.random() * 2 - 1) / perSide
-        var posy = (Math.random() * 2 - 1) / perSide
-        var size = Math.random() * 0.01
-        verts.push(
-            posx - size, posy - size, 0, 0,
-            posx + size, posy - size, 1, 0,
-            posx + size, posy + size, 1, 1
-        )
+    for (var i = -1; i < 1; i += 1 / perSide) {
+        for (var j = -1; j < 1; j += 1 / perSide) {
+            const attrs = 4
+            var verts = []
+            for (var f = 0; f < numFaces; f++) {
+                var posx = (Math.random() * 2 - 1) / perSide
+                var posy = (Math.random() * 2 - 1) / perSide
+                var size = Math.random() * 0.01
+                verts.push(
+                    posx - size, posy - size, 0, 0,
+                    posx + size, posy - size, 1, 0,
+                    posx + size, posy + size, 1, 1
+                )
+            }
+            var mesh = new Float32Array(verts)
+            var vao = gl.createVertexArray()
+            gl.bindVertexArray(vao)
+
+            var vbo = gl.createBuffer()
+            gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
+            gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW)
+            gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 4 * attrs, 4 * 0);
+            gl.enableVertexAttribArray(aPos);
+            gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, 4 * attrs, 4 * 2);
+            gl.enableVertexAttribArray(aTex);
+            chunks.push({ vao: vao, pos: [i, j], tris: mesh.length / attrs })
+        }
     }
-    var mesh = new Float32Array(verts)
-    var vao = gl.createVertexArray()
-    gl.bindVertexArray(vao)
 
-    var vbo = gl.createBuffer()
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
-    gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW)
-
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 4 * attrs, 4 * 0);
-    gl.enableVertexAttribArray(aPos);
-    gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, 4 * attrs, 4 * 2);
-    gl.enableVertexAttribArray(aTex);
     console.log("any error", gl.getError())
 
     function render() {
@@ -79,12 +89,10 @@ window.onload = function () {
         gl.enable(gl.CULL_FACE)
 
         // render mesh
-        for (var i = -1; i < 1; i += 1/perSide) {
-            for (var j = -1; j < 1; j += 1/perSide) {
-                gl.uniform2fv(uView, [i,j])
-                gl.bindVertexArray(vao)
-                gl.drawArrays(gl.TRIANGLES, 0, mesh.length / attrs);
-            }
+        for (var i = 0; i < chunks.length; i++) {
+            gl.uniform2fv(uView, chunks[i].pos)
+            gl.bindVertexArray(chunks[i].vao)
+            gl.drawArrays(gl.TRIANGLES, 0, chunks[i].tris);
         }
     }
     window.requestAnimationFrame(render)
