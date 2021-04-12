@@ -5959,13 +5959,15 @@
     const pixels = new Uint8Array(imagesPerRow * 4); // opaque blue
 
     for (var i = 0; i < pixels.length; i += 4) {
+      pixels[i + 0] = i;
+      pixels[i + 1] = 255 - i;
+      pixels[i + 2] = Math.floor((i + 255) / 2);
       pixels[i + 3] = 255;
-    }
+    } // pixels[0*4+0] = 0
+    // pixels[1*4+1] = 0
+    // pixels[2*4+2] = 0
 
-    pixels[1] = 255;
-    pixels[4] = 100;
-    pixels[5] = 100;
-    pixels[6] = 100;
+
     console.log("setting texture 0 to image", pixels);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
     gl.texImage3D(gl.TEXTURE_2D_ARRAY, level, internalFormat, 1, 1, imagesPerRow, border, srcFormat, srcType, pixels);
@@ -5974,6 +5976,10 @@
 
     image.onload = function () {
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       let maxLevel = 100;
       var fullImage = document.createElement('canvas');
       fullImage.width = image.width;
@@ -6028,13 +6034,9 @@
       }
 
       gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, maxLevel);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.REPEAT);
-    };
+    }; // image.src = url;
 
-    image.src = url;
+
     return texture;
   }
 
@@ -6969,9 +6971,9 @@
         return dax * dax + day * day - (dbx * dbx + dby * dby);
       });
       var countDrawCalls = 0,
-          countTris = 0; // this.gl.activeTexture(this.gl.TEXTURE0);
-      // this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.regular.texture);
-
+          countTris = 0;
+      this.gl.activeTexture(this.gl.TEXTURE0);
+      this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.regular.texture);
       this.gl.useProgram(this.regular.program);
       this.gl.uniformMatrix4fv(this.regular.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
       this.gl.disable(this.gl.BLEND);
@@ -7146,7 +7148,8 @@
         // vec2 tex = clamp(vTextureCoord, 0.0, 1.0);
         // #endif
 
-        vec4 textureColor = vec4(1.0,1.0,1.0,1.0); //texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
+        vec4 textureColor = vec4(1.0,1.0,1.0,1.0); //
+        textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
         float lighting = vLight;
         #ifdef TRANSPARENT
             FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
@@ -7728,7 +7731,7 @@
         }
 
         {
-          document.title = "VOKS .1";
+          document.title = "VOKS LITE";
         }
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
