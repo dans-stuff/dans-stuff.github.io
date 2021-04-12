@@ -5948,27 +5948,27 @@
     const internalFormat = gl.RGBA;
     const srcFormat = gl.RGBA;
     const srcType = gl.UNSIGNED_BYTE;
-    var imagesPerRow = Math.sqrt(num_images);
-    const pixels = new Uint8Array(imagesPerRow * 4); // opaque blue
-
-    for (var i = 0; i < pixels.length; i += 4) {
-      pixels[i + 0] = i;
-      pixels[i + 1] = 255 - i;
-      pixels[i + 2] = Math.floor((i + 255) / 2);
-      pixels[i + 3] = 255;
-    } // pixels[0*4+0] = 0
+    var imagesPerRow = Math.sqrt(num_images); // const pixels = new Uint8Array(imagesPerRow * 4);  // opaque blue
+    // for (var i = 0; i < pixels.length; i += 4) {
+    //     pixels[i + 0] = i
+    //     pixels[i + 1] = 255-i
+    //     pixels[i + 2] = Math.floor((i+255)/2)
+    //     pixels[i + 3] = 255
+    // }
+    // pixels[0*4+0] = 0
     // pixels[1*4+1] = 0
     // pixels[2*4+2] = 0
+    // console.log("setting texture 0 to image", pixels)
 
-
-    console.log("setting texture 0 to image", pixels);
     gl.bindTexture(gl.TEXTURE_2D, texture); // gl.texImage3D(gl.TEXTURE_2D, level, internalFormat,
     //     1, 1, imagesPerRow, border, srcFormat, srcType,
     //     pixels);
-    // gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
-    //     1, 1, border, srcFormat, srcType,
-    //     pixels);
 
+    const pixels = new Uint8Array([0, 255, 128, 255, 128, 128, 255, 255, 255, 127, 128, 255, 0, 128, 255, 255]);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     console.log("loading in to overwrite pixels", url);
     const image = new Image();
 
