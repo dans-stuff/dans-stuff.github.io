@@ -7730,7 +7730,7 @@
         }
 
         {
-          document.title = "VOKS NEV";
+          document.title = "VOKS NEV2";
         }
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
@@ -7760,8 +7760,18 @@
         this.debug.FPS = "aaactual: " + Math.floor(fps / fMax) + ", effective: " + Math.floor(efps);
       }
 
+      var errCheck = 0;
       this.events.on("step", function () {
-        this.debug.error = gl.getError();
+        errCheck++;
+
+        if (errCheck > 10) {
+          this.debug.error = gl.getError();
+
+          if (this.debug.error) {
+            console.error("gl error", this.debug.error);
+          }
+        }
+
         resize(canvas);
       }.bind(this));
       window.requestAnimationFrame(render.bind(this));
