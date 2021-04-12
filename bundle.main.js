@@ -6961,6 +6961,7 @@
           continue;
         }
 
+        if (chunk.renderSize < 1) continue;
         var translation = create$2();
         set(translation, chunk.x * Chunk.width, chunk.y * Chunk.height, 0);
         chunk.modelViewMatrix = clone(renderEvent.viewMatrix);
@@ -6975,6 +6976,16 @@
         var dby = (b.y + .5) * Chunk.height - renderEvent.camera.position[1];
         return dax * dax + day * day - (dbx * dbx + dby * dby);
       });
+
+      if (rList.length == 0) {
+        return {
+          countDrawCalls: 0,
+          countChunks: 0,
+          countFrustum: 0,
+          countTris: 0
+        };
+      }
+
       var countDrawCalls = 0,
           countTris = 0;
       this.gl.activeTexture(this.gl.TEXTURE0);
@@ -7145,7 +7156,7 @@
 
         vec4 textureColor = vec4(1.0,1.0,1.0,1.0); //
         // textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
-        textureColor = texture(uSampler, vec2(tex*16.0/16.0));
+        // textureColor = texture(uSampler, vec2(tex*16.0/16.0));
         float lighting = vLight;
         #ifdef TRANSPARENT
             FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
