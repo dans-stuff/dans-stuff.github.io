@@ -7700,8 +7700,7 @@
       var fps = 60;
       var framesThisSecond = 0;
       var lastFPS = lastFrame;
-      var fCount = 0,
-          fMax = 1;
+      var fMax = 1;
 
       function render() {
         var start = Date.now();
@@ -7713,8 +7712,6 @@
           fps = (framesThisSecond + fps) / 2;
           framesThisSecond = 0;
         }
-
-        fCount++;
 
         if (fps < 55) {
           fMax = (fMax * 99 + fMax + 1) / 100;
@@ -7730,13 +7727,9 @@
           }
         }
 
-        document.title = "FPS " + Math.floor(fps) + "/" + Math.floor(fMax);
-
-        if (fCount < Math.round(fMax)) {
-          return;
+        {
+          document.title = "Voxel Engine";
         }
-
-        fCount = 0;
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
 
