@@ -5969,8 +5969,11 @@
 
 
     console.log("setting texture 0 to image", pixels);
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
-    gl.texImage3D(gl.TEXTURE_2D_ARRAY, level, internalFormat, 1, 1, imagesPerRow, border, srcFormat, srcType, pixels);
+    gl.bindTexture(gl.TEXTURE_2D, texture); // gl.texImage3D(gl.TEXTURE_2D, level, internalFormat,
+    //     1, 1, imagesPerRow, border, srcFormat, srcType,
+    //     pixels);
+
+    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, 1, 1, border, srcFormat, srcType, pixels);
     console.log("loading in to overwrite pixels", url);
     const image = new Image();
 
@@ -6033,7 +6036,7 @@
         }
       }
 
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, maxLevel);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, maxLevel);
     }; // image.src = url;
 
 
@@ -6796,6 +6799,7 @@
     context(newgl) {
       this.gl = newgl;
       var allTiles = loadTextureAtlas(this.gl, textureFilename, 256);
+      var pixel = loadTextureAtlas(this.gl, textureFilename, 1);
       {
         var vertexShader = "#version 300 es\n#define VERT_SHADER\n" + chunkShader2;
         var fragShader = "#version 300 es\n#define FRAG_SHADER\n" + chunkShader2;
@@ -6813,7 +6817,8 @@
             sampler: this.gl.getUniformLocation(shaderProgram, 'uSampler')
           },
           program: shaderProgram,
-          texture: allTiles
+          texture: allTiles,
+          pixel: pixel
         };
       }
       {
@@ -6833,7 +6838,8 @@
             sampler: this.gl.getUniformLocation(shaderProgram, 'uSampler')
           },
           program: shaderProgram,
-          texture: allTiles
+          texture: allTiles,
+          pixel: pixel
         };
       }
       {
@@ -6854,7 +6860,8 @@
             sampler: this.gl.getUniformLocation(shaderProgram, 'uSampler')
           },
           program: shaderProgram,
-          texture: allTiles
+          texture: allTiles,
+          pixel: pixel
         };
       }
       console.log("chunks program info:", this.regular);
@@ -6973,7 +6980,7 @@
       var countDrawCalls = 0,
           countTris = 0;
       this.gl.activeTexture(this.gl.TEXTURE0);
-      this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.regular.texture);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.regular.pixel);
       this.gl.useProgram(this.regular.program);
       this.gl.uniformMatrix4fv(this.regular.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
       this.gl.uniform1i(this.regular.uniformLocations.sampler, 0);
@@ -7135,12 +7142,13 @@
     precision highp float;
     precision highp int;
     precision highp sampler2DArray;
+    precision highp sampler2D;
 
     in float vLight;
     in vec2 vTextureCoord;
     flat in int vAtlas;
 
-    uniform sampler2DArray uSampler;
+    uniform sampler2D uSampler;
 
     out vec4 FragColor;
 
@@ -7152,7 +7160,8 @@
         // #endif
 
         vec4 textureColor = vec4(1.0,1.0,1.0,1.0); //
-        textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
+        // textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
+        textureColor = texture(uSampler, vec2(tex*16.0/16.0));
         float lighting = vLight;
         #ifdef TRANSPARENT
             FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
@@ -7734,7 +7743,7 @@
         }
 
         {
-          document.title = "VOKS ZERO";
+          document.title = "VOKS 2D";
         }
         gl.viewport(0, 0, canvas.width, canvas.height);
         const fieldOfView = 82 * Math.PI / 180; // in radians
