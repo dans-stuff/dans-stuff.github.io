@@ -7636,7 +7636,7 @@
         qualityElement.appendChild(option);
       }
 
-      qualityElement.value = 0;
+      qualityElement.value = 2;
       this.qualityElement = qualityElement;
       optionsElement.appendChild(qualityElement);
       var renderDistanceElement = document.createElement("input");
