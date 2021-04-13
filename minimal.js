@@ -49,6 +49,7 @@ window.onload = function () {
             gl.bindVertexArray(vao)
 
             var vbo = gl.createBuffer()
+            debugger
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
             gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW)
             gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 4 * attrs, 4 * 0);

@@ -6870,16 +6870,18 @@
       if (chunk.uploaded) return;
       chunk.uploaded = true;
       let attrs = 7;
-      let type = this.gl.UNSIGNED_BYTE;
-      let size = 1;
+      let type = this.gl.FLOAT;
+      let size = 4;
 
       if (chunk.regular.length > 0) {
+        var mesh = new Float32Array(chunk.regular.mesh);
         chunk.regular.vao = this.gl.createVertexArray();
         this.gl.bindVertexArray(chunk.regular.vao);
         chunk.regular.vbo = this.gl.createBuffer();
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, chunk.regular.vbo);
-        this.gl.bufferData(this.gl.ARRAY_BUFFER, chunk.regular.mesh, this.gl.STATIC_DRAW);
-        chunk.regular.mesh = null;
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, mesh, this.gl.STATIC_DRAW);
+        chunk.regular.mesh = null; // debugger
+
         this.gl.vertexAttribPointer(this.regular.attribLocations.vertexPosition, 3, type, false, attrs * size, 0 * size);
         this.gl.enableVertexAttribArray(this.regular.attribLocations.vertexPosition);
         this.gl.vertexAttribPointer(this.regular.attribLocations.vertexLight, 1, type, false, attrs * size, 3 * size);
@@ -7160,7 +7162,7 @@
 
         vec4 textureColor = vec4(1.0,1.0,1.0,1.0); //
         // textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
-        // textureColor = texture(uSampler, vec2(tex*16.0/16.0));
+        textureColor = texture(uSampler, vec2(tex*16.0/16.0));
         float lighting = vLight;
         #ifdef TRANSPARENT
             FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
