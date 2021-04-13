@@ -7730,7 +7730,6 @@
       });
       var lastFrame = performance.now();
       var efps = 500;
-      let ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
       var timerPending = false;
       let query;
       let timers = {
@@ -7739,6 +7738,7 @@
         total: 2
       };
       let frames = [];
+      let ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
       document.title = "VOKS DUM";
 
       function render(fTime) {
@@ -7780,6 +7780,7 @@
           timerPending = true;
         } else {
           setTimeout(function () {
+            if (!query) return;
             let available = gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE);
             let disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
 
@@ -7790,6 +7791,7 @@
 
             timerPending = false;
             gl.deleteQuery(query);
+            query = false;
           }.bind(this), 1);
         }
 
