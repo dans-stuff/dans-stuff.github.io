@@ -6863,11 +6863,12 @@
       if (chunk.uploaded) return;
       chunk.uploaded = true;
       let attrs = 7;
-      let type = this.gl.FLOAT;
-      let size = 4;
+      let type = this.gl.UNSIGNED_BYTE;
+      let size = 1;
 
       if (chunk.regular.length > 0) {
-        var mesh = new Float32Array(chunk.regular.mesh);
+        var mesh = chunk.regular.mesh; // new Float32Array(chunk.regular.mesh)
+
         chunk.regular.vao = this.gl.createVertexArray();
         this.gl.bindVertexArray(chunk.regular.vao);
         chunk.regular.vbo = this.gl.createBuffer();
@@ -6886,7 +6887,8 @@
       }
 
       if (chunk.unculled.length > 0) {
-        var mesh = new Float32Array(chunk.unculled.mesh);
+        var mesh = chunk.unculled.mesh; // new Float32Array(chunk.unculled.mesh)
+
         chunk.unculled.vao = this.gl.createVertexArray();
         this.gl.bindVertexArray(chunk.unculled.vao);
         chunk.unculled.vbo = this.gl.createBuffer();
@@ -6904,7 +6906,8 @@
       }
 
       if (chunk.transparent.length > 0) {
-        var mesh = new Float32Array(chunk.transparent.mesh);
+        var mesh = chunk.transparent.mesh; // new Float32Array(chunk.transparent.mesh)
+
         chunk.transparent.vao = this.gl.createVertexArray();
         this.gl.bindVertexArray(chunk.transparent.vao);
         chunk.transparent.vbo = this.gl.createBuffer();

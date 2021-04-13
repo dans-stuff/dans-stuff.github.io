@@ -1,16 +1,13 @@
-const numChunks = 1*1
+const numChunks = 5*5, attrs = 7
 
 window.onload = function () {
     var canvas = document.createElement("canvas")
-    canvas.style.float = "right"
-    canvas.style.width = "100%"
-    canvas.style.height = "100%"
+    canvas.style.width = "1500px"
+    canvas.style.height = "500px"
     window.devicePixelRatio = 1;
     document.body.appendChild(canvas)
-    var displayWidth = canvas.clientWidth * 1;
-    var displayHeight = canvas.clientHeight * 1;
-    canvas.width = displayWidth;
-    canvas.height = displayHeight;
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
 
     // start webgl
     var gl = canvas.getContext("webgl2", {
@@ -39,28 +36,51 @@ window.onload = function () {
 
     // create chunk meshes
 
-    var chunks = []
-    var attrs = 7
-    const perSide = Math.floor(Math.sqrt(numChunks))
-    for (var i = -perSide/2; i < perSide/2; i += 1) {
-        for (var j = -perSide/2; j < perSide/2; j += 1) {
-            var mesh = new Float32Array(realChunkData)
-            var vao = gl.createVertexArray()
-            gl.bindVertexArray(vao)
+    const types = [
+        { type: gl.FLOAT, size: 4, array: Float32Array, name: "FLOAT32", unnormal: true },
+        { type: gl.UNSIGNED_BYTE, size: 1, array: Uint8Array, name: "UINT8", unnormal: true },
+        { type: gl.FLOAT, size: 4, array: Float32Array, name: "Normalized FLOAT32" },
+        { type: gl.UNSIGNED_BYTE, size: 1, array: Uint8Array, name: "Normalized UINT8" },
+    ]
 
-            var vbo = gl.createBuffer()
-            debugger
-            gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
-            gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW)
-            gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 4 * attrs, 4 * 0);
-            gl.enableVertexAttribArray(aPos);
-            gl.vertexAttribPointer(aVertexLight, 1, gl.FLOAT, false, 4 * attrs, 4 * 3);
-            gl.enableVertexAttribArray(aVertexLight);
-            gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, 4 * attrs, 4 * 4);
-            gl.enableVertexAttribArray(aTex);
-            chunks.push({ vao: vao, pos: [i*16, j*16], tris: mesh.length / attrs })
-        }
+    var options = document.createElement("select")
+    options.style = "position:absolute;left:0;top:0"
+    for (var i = 0; i < types.length; i++) {
+        var option = document.createElement("option");
+        option.value = i; option.text = types[i].name;
+        options.appendChild(option);
     }
+    options.value = 0;
+    document.body.appendChild(options)
+
+    // generate mesh, one vao and buffer per chunk, filled with static mesh data
+    var chunks
+    function generate() {
+        chunks = []
+        var { size, type, array, unnormal } = types[parseInt(options.value)]
+        const perSide = Math.floor(Math.sqrt(numChunks))
+        for (var i = -perSide / 2; i < perSide / 2; i += 1) {
+            for (var j = -perSide / 2; j < perSide / 2; j += 1) {
+                var mesh = new array(realChunkData)
+                var vao = gl.createVertexArray()
+                gl.bindVertexArray(vao)
+
+                var vbo = gl.createBuffer()
+                gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
+                gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW)
+                gl.vertexAttribPointer(aPos, 3, type, !unnormal, size * attrs, size * 0);
+                gl.enableVertexAttribArray(aPos);
+                gl.vertexAttribPointer(aVertexLight, 1, type, !unnormal, size * attrs, size * 3);
+                gl.enableVertexAttribArray(aVertexLight);
+                gl.vertexAttribPointer(aTex, 2, type, !unnormal, size * attrs, size * 4);
+                gl.enableVertexAttribArray(aTex);
+                
+                chunks.push({ vao: vao, pos: [i * 16, j * 16], tris: realChunkData.length / attrs })
+            }
+        }
+        console.log("any error", gl.getError())
+    }
+    options.addEventListener("change", generate)
 
     console.log("any error", gl.getError())
 
@@ -92,6 +112,7 @@ window.onload = function () {
         }
     }
     window.requestAnimationFrame(render)
+    generate()
 }
 
 
