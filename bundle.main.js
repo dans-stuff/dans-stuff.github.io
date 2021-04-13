@@ -6172,7 +6172,7 @@
       this.array[this.index + 4] = tx;
       this.array[this.index + 5] = ty;
       this.array[this.index + 6] = atlas;
-      this.index += 7;
+      this.index += this.attrs;
     }
 
   }
@@ -6396,9 +6396,9 @@
       this.width = w;
       this.height = h;
       this.depth = d;
-      this.unculled = new MeshBuilder(5000, 7);
-      this.regular = new MeshBuilder(5000, 7);
-      this.transparent = new MeshBuilder(5000, 7);
+      this.unculled = new MeshBuilder(5000, 8);
+      this.regular = new MeshBuilder(5000, 8);
+      this.transparent = new MeshBuilder(5000, 8);
       this.targets = [this.regular, this.transparent, this.unculled];
       this.faceBuffer = {};
 
@@ -6862,7 +6862,7 @@
     blit(chunk) {
       if (chunk.uploaded) return;
       chunk.uploaded = true;
-      let attrs = 7;
+      let attrs = 8;
       let type = this.gl.UNSIGNED_BYTE;
       let size = 1;
 
@@ -6998,6 +6998,7 @@
       this.gl.enable(this.gl.DEPTH_TEST);
       this.gl.depthFunc(this.gl.LEQUAL);
       this.gl.enable(this.gl.CULL_FACE);
+      this.gl.vertexAttrib1f(this.regular.attribLocations.vertexAtlas, 224);
 
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
@@ -7017,6 +7018,7 @@
       this.gl.uniformMatrix4fv(this.unculled.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
       this.gl.uniform1i(this.unculled.uniformLocations.sampler, 0);
       this.gl.disable(this.gl.CULL_FACE);
+      this.gl.vertexAttrib1f(this.unculled.attribLocations.vertexAtlas, 11);
 
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
@@ -7037,6 +7039,7 @@
       this.gl.uniform1i(this.transparent.uniformLocations.sampler, 0);
       this.gl.enable(this.gl.BLEND);
       this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+      this.gl.vertexAttrib1f(this.transparent.attribLocations.vertexAtlas, 255);
 
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
@@ -7095,9 +7098,9 @@
 
   const chunkShader2 = `
     #ifdef VERT_SHADER
-    precision highp float;
-    precision highp int;
-    precision highp sampler2DArray;
+    precision lowp float;
+    precision lowp int;
+    precision lowp sampler2DArray;
 
     in vec4 aVertexPosition;
     in float aVertexLight;
@@ -7153,10 +7156,10 @@
     
     #ifdef FRAG_SHADER
     
-    precision highp float;
-    precision highp int;
-    precision highp sampler2DArray;
-    precision highp sampler2D;
+    precision lowp float;
+    precision lowp int;
+    precision lowp sampler2DArray;
+    precision lowp sampler2D;
 
     in float vLight;
     in vec2 vTextureCoord;
@@ -7621,6 +7624,7 @@
       overlay.style.position = "absolute";
       overlay.style.top = "0";
       overlay.style.left = "0";
+      overlay.style["font-family"] = "monospace";
       this.overlay = overlay;
       var optionsElement = document.createElement("div");
       this.optionsElement = optionsElement;
@@ -7724,45 +7728,34 @@
         canvas: canvas,
         supports: this.supports
       });
-      var lastFrame = Date.now();
+      var lastFrame = performance.now();
       var efps = 500;
-      var fps = 60;
-      var framesThisSecond = 0;
-      var lastFPS = lastFrame;
-      var fMax = 1;
-      gl.clearColor(0.529, 0.807, 0.921, 1.0); // Clear to black, fully opaque
+      let ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+      var timerPending = false;
+      let query;
+      let timers = {
+        cpu: 1,
+        gpu: 1,
+        total: 2
+      };
+      let frames = [];
+      document.title = "VOKS DUM";
 
-      gl.clearDepth(1.0); // Clear everything
-
-      function render() {
-        var start = Date.now();
+      function render(fTime) {
+        frames = frames.filter(function (t) {
+          return t > fTime - 1000;
+        });
+        var start = performance.now();
         window.requestAnimationFrame(render.bind(this));
-        framesThisSecond += 1;
 
-        if (start - lastFPS > 1000) {
-          lastFPS = start;
-          fps = (framesThisSecond + fps) / 2;
-          framesThisSecond = 0;
+        if (!timerPending) {
+          query = gl.createQuery();
+          gl.beginQuery(ext.TIME_ELAPSED_EXT, query);
         }
 
-        if (fps < 55) {
-          fMax = (fMax * 99 + fMax + 1) / 100;
-
-          if (fMax > 3) {
-            fMax = 3;
-          }
-        } else {
-          fMax = (fMax * 99 + fMax - 1) / 100;
-
-          if (fMax < 1) {
-            fMax = 1;
-          }
-        }
-
-        {
-          document.title = "VOKS DUM";
-        }
         gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.clearColor(0.529, 0.807, 0.921, 1.0);
+        gl.clearDepth(1.0);
         const fieldOfView = 82 * Math.PI / 180; // in radians
 
         const aspect = canvas.width / canvas.height;
@@ -7780,14 +7773,31 @@
         this.events.emit("prerender", renderEvent);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         this.events.emit("render", renderEvent);
-        var frameTime = Date.now() - start;
-        this.addBenchmark({
-          label: "frame_time",
-          ms: frameTime
-        });
-        if (frameTime > 0.001) efps = (efps * 9 + 1000 / frameTime) / 10;
+        let metricSmoothing = 60;
+
+        if (!timerPending) {
+          gl.endQuery(ext.TIME_ELAPSED_EXT);
+          timerPending = true;
+        } else {
+          setTimeout(function () {
+            let available = gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE);
+            let disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+
+            if (available && !disjoint) {
+              let timeElapsed = gl.getQueryParameter(query, gl.QUERY_RESULT) / 1000000;
+              timers.gpu = (timers.gpu * metricSmoothing + timeElapsed) / (metricSmoothing + 1);
+            }
+
+            timerPending = false;
+            gl.deleteQuery(query);
+          }.bind(this), 1);
+        }
+
+        timers.cpu = (timers.cpu * metricSmoothing + (performance.now() - start)) / (metricSmoothing + 1);
+        timers.total = (timers.total * metricSmoothing + (timers.cpu + timers.gpu)) / (metricSmoothing + 1);
+        if (timers.total > 0.001) efps = 1000 / timers.total;
         lastFrame = start;
-        this.debug.FPS = "aaactual: " + Math.floor(fps / fMax) + ", effective: " + Math.floor(efps);
+        this.debug.FPS = `${Math.floor(efps).toString().padStart(4, " ")}/${frames.push(fTime)} CPU:${Math.floor(timers.cpu * 10) / 10} GPU:${Math.floor(timers.gpu * 10) / 10}`;
       }
 
       var errCheck = 0;
