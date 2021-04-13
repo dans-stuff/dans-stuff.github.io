@@ -6944,7 +6944,7 @@
     render(renderEvent, chunkMap) {
       var chunks = chunkMap.chunks;
       copy(this.modelViewMatrix, renderEvent.viewMatrix);
-      var maximumRender = 10000;
+      var maximumRender = 1;
       var rList = [];
       var countRenderableChunks = 0;
 
@@ -6961,7 +6961,7 @@
           continue;
         }
 
-        if (chunk.renderSize < 1) continue;
+        if (chunk.renderSize == 0) continue;
         var translation = create$2();
         set(translation, chunk.x * Chunk.width, chunk.y * Chunk.height, 0);
         chunk.modelViewMatrix = clone(renderEvent.viewMatrix);
@@ -6996,28 +6996,31 @@
 
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
-        if (Math.floor(chunk.renderSize * chunk.regular.length) == 0) continue;
+        var rSize = chunk.renderSize;
+        rSize = 1;
+        if (Math.floor(rSize * chunk.regular.length) == 0) continue;
         if (countDrawCalls > maximumRender) break;
         countDrawCalls++;
         this.gl.uniformMatrix4fv(this.regular.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.regular.vao);
-        this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.regular.length));
+        this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.regular.length));
         this.gl.bindVertexArray(null);
-        countTris += Math.floor(chunk.renderSize * chunk.regular.length);
+        countTris += Math.floor(rSize * chunk.regular.length);
       } // this.gl.useProgram(this.unculled.program);
       // this.gl.uniformMatrix4fv(this.unculled.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
       // this.gl.uniform1i(this.unculled.uniformLocations.sampler, 0);
       // this.gl.disable(this.gl.CULL_FACE)
       // for (var i = 0; i < rList.length; i++) {
       //     var chunk = rList[i]
-      //     if (Math.floor(chunk.renderSize * chunk.unculled.length) == 0) continue
+      // var rSize = chunk.renderSize
+      //     if (Math.floor(rSize * chunk.unculled.length) == 0) continue
       //     if (countDrawCalls > maximumRender) break
       //     countDrawCalls++
       //     this.gl.uniformMatrix4fv(this.unculled.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
       //     this.gl.bindVertexArray(chunk.unculled.vao)
-      //     this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.unculled.length));
+      //     this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.unculled.length));
       //     this.gl.bindVertexArray(null)
-      //     countTris += Math.floor(chunk.renderSize * chunk.unculled.length)
+      //     countTris += Math.floor(rSize * chunk.unculled.length)
       // }
       // this.gl.useProgram(this.transparent.program);
       // this.gl.uniformMatrix4fv(this.transparent.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
@@ -7027,14 +7030,15 @@
       // this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
       // for (var i = 0; i < rList.length; i++) {
       //     var chunk = rList[i]
-      //     if (Math.floor(chunk.renderSize * chunk.transparent.length) == 0) continue
+      // var rSize = chunk.renderSize
+      //     if (Math.floor(rSize * chunk.transparent.length) == 0) continue
       //     if (countDrawCalls > maximumRender) break
       //     countDrawCalls++
       //     this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
       //     this.gl.bindVertexArray(chunk.transparent.vao)
-      //     this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(chunk.renderSize * chunk.transparent.length));
+      //     this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.transparent.length));
       //     this.gl.bindVertexArray(null)
-      //     countTris += Math.floor(chunk.renderSize * chunk.transparent.length)
+      //     countTris += Math.floor(rSize * chunk.transparent.length)
       // }
       // if (this.highlight) {
       //     let { x, y, z } = this.highlight
