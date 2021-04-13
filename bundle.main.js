@@ -5960,24 +5960,21 @@
     // pixels[2*4+2] = 0
     // console.log("setting texture 0 to image", pixels)
 
-    gl.bindTexture(gl.TEXTURE_2D, texture); // gl.texImage3D(gl.TEXTURE_2D, level, internalFormat,
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture); // gl.texImage3D(gl.TEXTURE_2D, level, internalFormat,
     //     1, 1, imagesPerRow, border, srcFormat, srcType,
     //     pixels);
 
     const pixels = new Uint8Array([0, 255, 128, 255, 128, 128, 255, 255, 255, 127, 128, 255, 0, 128, 255, 255]);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, 2, 2, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     console.log("loading in to overwrite pixels", url);
     const image = new Image();
 
     image.onload = function () {
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       let maxLevel = 100;
       var fullImage = document.createElement('canvas');
       fullImage.width = image.width;
@@ -6031,10 +6028,10 @@
         }
       }
 
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, maxLevel);
-    }; // image.src = url;
+      gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, maxLevel);
+    };
 
-
+    image.src = url;
     return texture;
   }
 
@@ -6793,10 +6790,6 @@
 
     context(newgl) {
       this.gl = newgl;
-      this.gl.disable(this.gl.BLEND);
-      this.gl.enable(this.gl.DEPTH_TEST);
-      this.gl.depthFunc(this.gl.LEQUAL);
-      this.gl.enable(this.gl.CULL_FACE);
       var allTiles = loadTextureAtlas(this.gl, textureFilename, 256);
       var pixel = loadTextureAtlas(this.gl, textureFilename, 1);
       {
@@ -6893,11 +6886,12 @@
       }
 
       if (chunk.unculled.length > 0) {
+        var mesh = new Float32Array(chunk.unculled.mesh);
         chunk.unculled.vao = this.gl.createVertexArray();
         this.gl.bindVertexArray(chunk.unculled.vao);
         chunk.unculled.vbo = this.gl.createBuffer();
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, chunk.unculled.vbo);
-        this.gl.bufferData(this.gl.ARRAY_BUFFER, chunk.unculled.mesh, this.gl.STATIC_DRAW);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, mesh, this.gl.STATIC_DRAW);
         chunk.unculled.mesh = null;
         this.gl.vertexAttribPointer(this.unculled.attribLocations.vertexPosition, 3, type, false, attrs * size, 0 * size);
         this.gl.enableVertexAttribArray(this.unculled.attribLocations.vertexPosition);
@@ -6910,11 +6904,12 @@
       }
 
       if (chunk.transparent.length > 0) {
+        var mesh = new Float32Array(chunk.transparent.mesh);
         chunk.transparent.vao = this.gl.createVertexArray();
         this.gl.bindVertexArray(chunk.transparent.vao);
         chunk.transparent.vbo = this.gl.createBuffer();
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, chunk.transparent.vbo);
-        this.gl.bufferData(this.gl.ARRAY_BUFFER, chunk.transparent.mesh, this.gl.STATIC_DRAW);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, mesh, this.gl.STATIC_DRAW);
         chunk.transparent.mesh = null;
         this.gl.vertexAttribPointer(this.transparent.attribLocations.vertexPosition, 3, type, false, attrs * size, 0 * size);
         this.gl.enableVertexAttribArray(this.transparent.attribLocations.vertexPosition);
@@ -6945,8 +6940,9 @@
 
     render(renderEvent, chunkMap) {
       var chunks = chunkMap.chunks;
+      var time = Date.now() / 25000 % 1;
       copy(this.modelViewMatrix, renderEvent.viewMatrix);
-      var maximumRender = 1;
+      var maximumRender = 10000;
       var rList = [];
       var countRenderableChunks = 0;
 
@@ -6991,10 +6987,14 @@
       var countDrawCalls = 0,
           countTris = 0;
       this.gl.activeTexture(this.gl.TEXTURE0);
-      this.gl.bindTexture(this.gl.TEXTURE_2D, this.regular.pixel);
+      this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.regular.texture);
       this.gl.useProgram(this.regular.program);
       this.gl.uniformMatrix4fv(this.regular.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
       this.gl.uniform1i(this.regular.uniformLocations.sampler, 0);
+      this.gl.disable(this.gl.BLEND);
+      this.gl.enable(this.gl.DEPTH_TEST);
+      this.gl.depthFunc(this.gl.LEQUAL);
+      this.gl.enable(this.gl.CULL_FACE);
 
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
@@ -7008,67 +7008,77 @@
         this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.regular.length));
         this.gl.bindVertexArray(null);
         countTris += Math.floor(rSize * chunk.regular.length);
-      } // this.gl.useProgram(this.unculled.program);
-      // this.gl.uniformMatrix4fv(this.unculled.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
-      // this.gl.uniform1i(this.unculled.uniformLocations.sampler, 0);
-      // this.gl.disable(this.gl.CULL_FACE)
-      // for (var i = 0; i < rList.length; i++) {
-      //     var chunk = rList[i]
-      // var rSize = chunk.renderSize
-      //     if (Math.floor(rSize * chunk.unculled.length) == 0) continue
-      //     if (countDrawCalls > maximumRender) break
-      //     countDrawCalls++
-      //     this.gl.uniformMatrix4fv(this.unculled.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
-      //     this.gl.bindVertexArray(chunk.unculled.vao)
-      //     this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.unculled.length));
-      //     this.gl.bindVertexArray(null)
-      //     countTris += Math.floor(rSize * chunk.unculled.length)
-      // }
-      // this.gl.useProgram(this.transparent.program);
-      // this.gl.uniformMatrix4fv(this.transparent.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
-      // this.gl.uniform1f(this.transparent.uniformLocations.time, time);
-      // this.gl.uniform1i(this.transparent.uniformLocations.sampler, 0);
-      // this.gl.enable(this.gl.BLEND)
-      // this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
-      // for (var i = 0; i < rList.length; i++) {
-      //     var chunk = rList[i]
-      // var rSize = chunk.renderSize
-      //     if (Math.floor(rSize * chunk.transparent.length) == 0) continue
-      //     if (countDrawCalls > maximumRender) break
-      //     countDrawCalls++
-      //     this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
-      //     this.gl.bindVertexArray(chunk.transparent.vao)
-      //     this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.transparent.length));
-      //     this.gl.bindVertexArray(null)
-      //     countTris += Math.floor(rSize * chunk.transparent.length)
-      // }
-      // if (this.highlight) {
-      //     let { x, y, z } = this.highlight
-      //     var tempChunk = chunkMap.subChunk(x, y, z)
-      //     this.smallTesselator.addVoxel(0, 0, 0, tempChunk)
-      //     var chunk = this.smallTesselator.finish()
-      //     if (chunk.triangles > 0) {
-      //         this.blit(chunk)
-      //         var translation = vec3.create();
-      //         vec3.set(translation, x, y, z);
-      //         var modelViewMatrix = mat4.clone(renderEvent.viewMatrix)
-      //         mat4.translate(modelViewMatrix, modelViewMatrix, translation);
-      //         var program = chunk.regular.length ? "regular" : chunk.transparent.length ? "transparent" : "unculled"
-      //         this.gl.enable(this.gl.POLYGON_OFFSET_FILL);
-      //         this.gl.polygonOffset(-1.0, -.1);
-      //         this.gl.blendFunc(this.gl.CONSTANT_COLOR, this.gl.SRC_COLOR);
-      //         this.gl.depthFunc(this.gl.LEQUAL)
-      //         // this.gl.enable(this.gl.CULL_FACE)
-      //         this.gl.useProgram(this[program].program);
-      //         this.gl.uniformMatrix4fv(this[program].uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
-      //         this.gl.uniformMatrix4fv(this[program].uniformLocations.modelViewMatrix, false, modelViewMatrix);
-      //         this.gl.bindVertexArray(chunk[program].vao)
-      //         this.gl.drawArrays(this.gl.TRIANGLES, 0, chunk[program].length);
-      //         this.gl.disable(this.gl.POLYGON_OFFSET_FILL);
-      //         this.free(chunk)
-      //     }
-      // }
+      }
 
+      this.gl.useProgram(this.unculled.program);
+      this.gl.uniformMatrix4fv(this.unculled.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+      this.gl.uniform1i(this.unculled.uniformLocations.sampler, 0);
+      this.gl.disable(this.gl.CULL_FACE);
+
+      for (var i = 0; i < rList.length; i++) {
+        var chunk = rList[i];
+        var rSize = chunk.renderSize;
+        if (Math.floor(rSize * chunk.unculled.length) == 0) continue;
+        if (countDrawCalls > maximumRender) break;
+        countDrawCalls++;
+        this.gl.uniformMatrix4fv(this.unculled.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
+        this.gl.bindVertexArray(chunk.unculled.vao);
+        this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.unculled.length));
+        this.gl.bindVertexArray(null);
+        countTris += Math.floor(rSize * chunk.unculled.length);
+      }
+
+      this.gl.useProgram(this.transparent.program);
+      this.gl.uniformMatrix4fv(this.transparent.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+      this.gl.uniform1f(this.transparent.uniformLocations.time, time);
+      this.gl.uniform1i(this.transparent.uniformLocations.sampler, 0);
+      this.gl.enable(this.gl.BLEND);
+      this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+
+      for (var i = 0; i < rList.length; i++) {
+        var chunk = rList[i];
+        var rSize = chunk.renderSize;
+        if (Math.floor(rSize * chunk.transparent.length) == 0) continue;
+        if (countDrawCalls > maximumRender) break;
+        countDrawCalls++;
+        this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
+        this.gl.bindVertexArray(chunk.transparent.vao);
+        this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.transparent.length));
+        this.gl.bindVertexArray(null);
+        countTris += Math.floor(rSize * chunk.transparent.length);
+      }
+
+      if (this.highlight) {
+        let {
+          x,
+          y,
+          z
+        } = this.highlight;
+        var tempChunk = chunkMap.subChunk(x, y, z);
+        this.smallTesselator.addVoxel(0, 0, 0, tempChunk);
+        var chunk = this.smallTesselator.finish();
+
+        if (chunk.triangles > 0) {
+          this.blit(chunk);
+          var translation = create$2();
+          set(translation, x, y, z);
+          var modelViewMatrix = clone(renderEvent.viewMatrix);
+          translate(modelViewMatrix, modelViewMatrix, translation);
+          var program = chunk.regular.length ? "regular" : chunk.transparent.length ? "transparent" : "unculled";
+          this.gl.enable(this.gl.POLYGON_OFFSET_FILL);
+          this.gl.polygonOffset(-1.0, -.1);
+          this.gl.blendFunc(this.gl.CONSTANT_COLOR, this.gl.SRC_COLOR);
+          this.gl.depthFunc(this.gl.LEQUAL); // this.gl.enable(this.gl.CULL_FACE)
+
+          this.gl.useProgram(this[program].program);
+          this.gl.uniformMatrix4fv(this[program].uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+          this.gl.uniformMatrix4fv(this[program].uniformLocations.modelViewMatrix, false, modelViewMatrix);
+          this.gl.bindVertexArray(chunk[program].vao);
+          this.gl.drawArrays(this.gl.TRIANGLES, 0, chunk[program].length);
+          this.gl.disable(this.gl.POLYGON_OFFSET_FILL);
+          this.free(chunk);
+        }
+      }
 
       return {
         countDrawCalls: countDrawCalls,
@@ -7149,7 +7159,7 @@
     in vec2 vTextureCoord;
     flat in int vAtlas;
 
-    uniform sampler2D uSampler;
+    uniform sampler2DArray uSampler;
 
     out vec4 FragColor;
 
@@ -7161,8 +7171,8 @@
         // #endif
 
         vec4 textureColor = vec4(1.0,1.0,1.0,1.0); //
-        // textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
-        textureColor = texture(uSampler, vec2(tex*16.0/16.0));
+        textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
+        // textureColor = texture(uSampler, vec2(tex*16.0/16.0));
         float lighting = vLight;
         #ifdef TRANSPARENT
             FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
