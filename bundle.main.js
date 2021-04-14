@@ -7187,9 +7187,9 @@
 
   const chunkShader2 = `
     #ifdef VERT_SHADER
-    precision lowp float;
-    precision lowp int;
-    precision lowp sampler2DArray;
+    precision highp float;
+    precision highp int;
+    precision highp sampler2DArray;
 
     in vec4 aVertexPosition;
     in float aVertexLight;
@@ -7245,10 +7245,10 @@
     
     #ifdef FRAG_SHADER
     
-    precision lowp float;
-    precision lowp int;
-    precision lowp sampler2DArray;
-    precision lowp sampler2D;
+    precision mediump float;
+    precision mediump int;
+    precision mediump sampler2DArray;
+    precision mediump sampler2D;
 
     in float vLight;
     in vec2 vTextureCoord;
