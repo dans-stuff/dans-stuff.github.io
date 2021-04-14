@@ -5227,9 +5227,20 @@
     }
 
     biome(chunk) {
-      if (chunk.biome) return;
+      if (chunk.initialBiome) return;
+      chunk.initialBiome = this.calculateBiome(chunk);
+    }
+
+    randomgen(chunk) {
+      if (chunk.didRNG) return;
+      chunk.didRNG = true;
+      this.chunkMap.neighbors(chunk, 9, this.biome.bind(this));
       chunk.rng = seedRandom("" + this.seed + ":" + chunk.id);
-      chunk.biome = this.calculateBiome(chunk);
+      chunk.biome = chunk.initialBiome; // this is a safe moment to do any biome switching we might want to do
+      // so long as you inspect initialBiome of other chunks, not their true biome (Cellular Automata)
+      // let allBiomes = Object.keys(biomes)
+      // chunk.biome = allBiomes[Math.floor(chunk.rng()*allBiomes.length)]
+
       chunk.center = fromValues$1((chunk.x + chunk.rng()) * Chunk.width, (chunk.y + chunk.rng()) * Chunk.height);
       var eh = biomes[chunk.biome].height;
       chunk.roughHeight = this.middle + eh * (eh < 0 ? this.middle - this.lower : this.higher - this.middle);
@@ -5269,7 +5280,7 @@
 
     generate(chunk) {
       if (chunk.map) return;
-      this.chunkMap.neighbors(chunk, 25, this.biome.bind(this));
+      this.chunkMap.neighbors(chunk, 25, this.randomgen.bind(this));
       if (!chunk.rng) debugger;
       var xBase = chunk.x;
       var yBase = chunk.y;
@@ -6090,28 +6101,29 @@
   class ChunkMesh {
     constructor(x, y, regular, unculled, transparent) {
       this.x = x;
-      this.y = y;
+      this.y = y; // if (x==-5 && y==-1) debugger
+
       this.id = x + "," + y;
-      this.regular = {
-        mesh: regular.combine()
-      };
+      this.regular = regular.combine();
       this.regular.length = this.regular.mesh.length / regular.attrs;
-      this.unculled = {
-        mesh: unculled.combine()
-      };
+      if (this.regular.elements.length > 0) this.regular.length = this.regular.elements.length;
+      this.unculled = unculled.combine();
       this.unculled.length = this.unculled.mesh.length / unculled.attrs;
-      this.transparent = {
-        mesh: transparent.combine()
-      };
+      if (this.unculled.elements.length > 0) this.unculled.length = this.unculled.elements.length;
+      this.transparent = transparent.combine();
       this.transparent.length = this.transparent.mesh.length / transparent.attrs;
+      if (this.transparent.elements.length > 0) this.transparent.length = this.transparent.elements.length; // debugger
+
       this.triangles = this.transparent.length + this.unculled.length + this.regular.length;
     }
 
     buffers() {
-      return [this.regular.mesh.buffer, this.unculled.mesh.buffer, this.transparent.mesh.buffer];
+      return [this.regular.mesh.buffer, this.regular.elements.buffer, this.unculled.mesh.buffer, this.unculled.elements.buffer, this.transparent.mesh.buffer, this.transparent.elements.buffer];
     }
 
   }
+  var maxIndex = 0;
+  var maxSize = 0;
 
   class MeshBuilder {
     constructor(size, attrs) {
@@ -6121,6 +6133,10 @@
       this.index = 0;
       this.arrays = [];
       this.totalLength = 0;
+      this.elements = new Uint32Array(1000000);
+      if (this.elements.length == 0) throw new Error("unable to allocate element buffer");
+      this.elementIndex = 0;
+      this.elementNumber = 0;
     }
 
     ensure(padding) {
@@ -6136,14 +6152,49 @@
     }
 
     combine() {
+      if (this.index > this.elements.length) {
+        throw new Error("not allowed: more than " + this.elements.length + ` elements`);
+      }
+
+      if (this.index > maxIndex) {
+        maxIndex = this.index; // if (maxIndex==39744) debugger
+
+        console.log("new max index", maxIndex);
+      }
+
+      if (this.elementIndex > maxSize) {
+        maxSize = this.elementIndex; // if (maxSize==21756) debugger
+
+        console.log("new max element", maxSize);
+      }
+
+      var elements = Uint32Array.from(this.elements.subarray(0, this.elementIndex));
+      this.elementIndex = 0;
+      this.elementNumber = 0;
+
+      if (this.index > 65000) {
+        this.index = 0;
+        console.log("chunk with", elements.length, "elements up to", this.index);
+        return {
+          "mesh": new Uint8Array(0),
+          "elements": new Uint8Array(0)
+        };
+      }
+
       if (this.index === 0) {
-        return new Uint8Array(0);
+        return {
+          "mesh": new Uint8Array(0),
+          "elements": new Uint8Array(0)
+        };
       }
 
       if (this.arrays.length === 0) {
         var arr = this.array.slice(0, this.index);
         this.index = 0;
-        return arr;
+        return {
+          "mesh": arr,
+          "elements": elements
+        };
       }
 
       this.totalLength += this.index;
@@ -6160,7 +6211,10 @@
       this.arrays = [];
       this.totalLength = 0;
       this.index = 0;
-      return bigArray;
+      return {
+        "mesh": bigArray,
+        "elements": elements
+      };
     }
 
     add7(x, y, z, light, tx, ty, atlas) {
@@ -6172,7 +6226,28 @@
       this.array[this.index + 4] = tx;
       this.array[this.index + 5] = ty;
       this.array[this.index + 6] = atlas;
+
+      if (this.index + this.attrs >= 150000 && this.index < 150000) {
+        console.error("chunk has large index");
+        throw new Error("mesh index can't fit");
+      }
+
+      if (this.index > 65536) ;
+
       this.index += this.attrs;
+      let id = this.elementNumber;
+      this.elementNumber++;
+      return id;
+    }
+
+    addQuad(c1, c2, c3, c4) {
+      this.elements[this.elementIndex] = c1;
+      this.elements[this.elementIndex + 1] = c2;
+      this.elements[this.elementIndex + 2] = c3;
+      this.elements[this.elementIndex + 3] = c3;
+      this.elements[this.elementIndex + 4] = c2;
+      this.elements[this.elementIndex + 5] = c4;
+      this.elementIndex += 6;
     }
 
   }
@@ -6459,19 +6534,17 @@
       var tx = atlas % 16 * texScale + tlPadding,
           ty = Math.floor(atlas / 16) * texScale + tlPadding; // nw to se
 
-      target.add7(x + 0, y + 0, z, topLight, tx, ty + texWidth, atlas);
-      target.add7(x + 1, y + 1, z, topLight, tx + texWidth, ty + texWidth, atlas);
-      target.add7(x + 1, y + 1, z + 1, topLight, tx + texWidth, ty, atlas);
-      target.add7(x + 0, y + 0, z, topLight, tx, ty + texWidth, atlas);
-      target.add7(x + 1, y + 1, z + 1, topLight, tx + texWidth, ty, atlas);
-      target.add7(x + 0, y + 0, z + 1, topLight, tx, ty, atlas); // sw to ne
+      var c1 = target.add7(x + 1, y + 1, z, topLight, tx + texWidth, ty + texWidth, atlas);
+      var c2 = target.add7(x + 0, y + 0, z, topLight, tx, ty + texWidth, atlas);
+      var c3 = target.add7(x + 1, y + 1, z + 1, topLight, tx + texWidth, ty, atlas);
+      var c4 = target.add7(x + 0, y + 0, z + 1, topLight, tx, ty, atlas);
+      target.addQuad(c1, c2, c3, c4); // sw to ne
 
-      target.add7(x + 0, y + 1, z + 1, topLight, tx, ty, atlas);
-      target.add7(x + 0, y + 1, z, topLight, tx, ty + texWidth, atlas);
-      target.add7(x + 1, y + 0, z + 1, topLight, tx + texWidth, ty, atlas);
-      target.add7(x + 0, y + 1, z, topLight, tx, ty + texWidth, atlas);
-      target.add7(x + 1, y + 0, z, topLight, tx + texWidth, ty + texWidth, atlas);
-      target.add7(x + 1, y + 0, z + 1, topLight, tx + texWidth, ty, atlas);
+      var c1 = target.add7(x + 0, y + 1, z + 1, topLight, tx, ty, atlas);
+      var c2 = target.add7(x + 0, y + 1, z, topLight, tx, ty + texWidth, atlas);
+      var c3 = target.add7(x + 1, y + 0, z + 1, topLight, tx + texWidth, ty, atlas);
+      var c4 = target.add7(x + 1, y + 0, z, topLight, tx + texWidth, ty + texWidth, atlas);
+      target.addQuad(c1, c2, c3, c4);
     }
 
     tesselate(chunk) {
@@ -6615,7 +6688,7 @@
             var start = 0,
                 end = axis1length;
 
-            {
+            if ( this.trackBounds) {
               let rangeBufferID = face >= 4 ? this.index2d(j, i) : this.index2d(i, j);
               start = this.startBuffers[face][rangeBufferID];
               end = this.endBuffers[face][rangeBufferID];
@@ -6698,19 +6771,17 @@
           th = texWidth * tys;
 
       if (pt1 + pt4 < pt2 + pt3) {
-        target.add7(x + lookup.pt1.x * w, y + lookup.pt1.y * h, z + lookup.pt1.z * d, pt1, tx, ty, atlas);
-        target.add7(x + lookup.pt2.x * w, y + lookup.pt2.y * h, z + lookup.pt2.z * d, pt2, tx + tw, ty, atlas);
-        target.add7(x + lookup.pt3.x * w, y + lookup.pt3.y * h, z + lookup.pt3.z * d, pt3, tx, ty + th, atlas);
-        target.add7(x + lookup.pt3.x * w, y + lookup.pt3.y * h, z + lookup.pt3.z * d, pt3, tx, ty + th, atlas);
-        target.add7(x + lookup.pt2.x * w, y + lookup.pt2.y * h, z + lookup.pt2.z * d, pt2, tx + tw, ty, atlas);
-        target.add7(x + lookup.pt4.x * w, y + lookup.pt4.y * h, z + lookup.pt4.z * d, pt4, tx + tw, ty + th, atlas);
+        let c1 = target.add7(x + lookup.pt1.x * w, y + lookup.pt1.y * h, z + lookup.pt1.z * d, pt1, tx, ty, atlas);
+        let c2 = target.add7(x + lookup.pt2.x * w, y + lookup.pt2.y * h, z + lookup.pt2.z * d, pt2, tx + tw, ty, atlas);
+        let c3 = target.add7(x + lookup.pt3.x * w, y + lookup.pt3.y * h, z + lookup.pt3.z * d, pt3, tx, ty + th, atlas);
+        let c4 = target.add7(x + lookup.pt4.x * w, y + lookup.pt4.y * h, z + lookup.pt4.z * d, pt4, tx + tw, ty + th, atlas);
+        target.addQuad(c1, c2, c3, c4);
       } else {
-        target.add7(x + lookup.pt2.x * w, y + lookup.pt2.y * h, z + lookup.pt2.z * d, pt2, tx + tw, ty, atlas);
-        target.add7(x + lookup.pt4.x * w, y + lookup.pt4.y * h, z + lookup.pt4.z * d, pt4, tx + tw, ty + th, atlas);
-        target.add7(x + lookup.pt1.x * w, y + lookup.pt1.y * h, z + lookup.pt1.z * d, pt1, tx, ty, atlas);
-        target.add7(x + lookup.pt1.x * w, y + lookup.pt1.y * h, z + lookup.pt1.z * d, pt1, tx, ty, atlas);
-        target.add7(x + lookup.pt4.x * w, y + lookup.pt4.y * h, z + lookup.pt4.z * d, pt4, tx + tw, ty + th, atlas);
-        target.add7(x + lookup.pt3.x * w, y + lookup.pt3.y * h, z + lookup.pt3.z * d, pt3, tx, ty + th, atlas);
+        let c1 = target.add7(x + lookup.pt1.x * w, y + lookup.pt1.y * h, z + lookup.pt1.z * d, pt1, tx, ty, atlas);
+        let c2 = target.add7(x + lookup.pt2.x * w, y + lookup.pt2.y * h, z + lookup.pt2.z * d, pt2, tx + tw, ty, atlas);
+        let c3 = target.add7(x + lookup.pt3.x * w, y + lookup.pt3.y * h, z + lookup.pt3.z * d, pt3, tx, ty + th, atlas);
+        let c4 = target.add7(x + lookup.pt4.x * w, y + lookup.pt4.y * h, z + lookup.pt4.z * d, pt4, tx + tw, ty + th, atlas);
+        target.addQuad(c1, c2, c3, c4);
       }
     }
 
@@ -6790,6 +6861,8 @@
 
     context(newgl) {
       this.gl = newgl;
+      var max = newgl.getParameter(newgl.MAX_ELEMENTS_INDICES);
+      console.log("MAX_ELEMENTS_INDICES:", max);
       var allTiles = loadTextureAtlas(this.gl, textureFilename, 256);
       var pixel = loadTextureAtlas(this.gl, textureFilename, 1);
       {
@@ -6874,7 +6947,13 @@
         chunk.regular.vbo = this.gl.createBuffer();
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, chunk.regular.vbo);
         this.gl.bufferData(this.gl.ARRAY_BUFFER, mesh, this.gl.STATIC_DRAW);
-        chunk.regular.mesh = null; // debugger
+        chunk.regular.mesh = null;
+
+        if (chunk.regular.elements.length > 0) {
+          chunk.regular.ids = this.gl.createBuffer();
+          this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, chunk.regular.ids);
+          this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, chunk.regular.elements, this.gl.STATIC_DRAW);
+        }
 
         this.gl.vertexAttribPointer(this.regular.attribLocations.vertexPosition, 3, type, false, attrs * size, 0 * size);
         this.gl.enableVertexAttribArray(this.regular.attribLocations.vertexPosition);
@@ -6895,6 +6974,13 @@
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, chunk.unculled.vbo);
         this.gl.bufferData(this.gl.ARRAY_BUFFER, mesh, this.gl.STATIC_DRAW);
         chunk.unculled.mesh = null;
+
+        if (chunk.unculled.elements.length > 0) {
+          chunk.unculled.ids = this.gl.createBuffer();
+          this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, chunk.unculled.ids);
+          this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, chunk.unculled.elements, this.gl.STATIC_DRAW);
+        }
+
         this.gl.vertexAttribPointer(this.unculled.attribLocations.vertexPosition, 3, type, false, attrs * size, 0 * size);
         this.gl.enableVertexAttribArray(this.unculled.attribLocations.vertexPosition);
         this.gl.vertexAttribPointer(this.unculled.attribLocations.vertexLight, 1, type, false, attrs * size, 3 * size);
@@ -6914,6 +7000,13 @@
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, chunk.transparent.vbo);
         this.gl.bufferData(this.gl.ARRAY_BUFFER, mesh, this.gl.STATIC_DRAW);
         chunk.transparent.mesh = null;
+
+        if (chunk.transparent.elements.length > 0) {
+          chunk.transparent.ids = this.gl.createBuffer();
+          this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, chunk.transparent.ids);
+          this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, chunk.transparent.elements, this.gl.STATIC_DRAW);
+        }
+
         this.gl.vertexAttribPointer(this.transparent.attribLocations.vertexPosition, 3, type, false, attrs * size, 0 * size);
         this.gl.enableVertexAttribArray(this.transparent.attribLocations.vertexPosition);
         this.gl.vertexAttribPointer(this.transparent.attribLocations.vertexLight, 1, type, false, attrs * size, 3 * size);
@@ -7003,14 +7096,12 @@
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
         var rSize = chunk.renderSize;
-        rSize = 1;
         if (Math.floor(rSize * chunk.regular.length) == 0) continue;
         if (countDrawCalls > maximumRender) break;
         countDrawCalls++;
         this.gl.uniformMatrix4fv(this.regular.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.regular.vao);
-        this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.regular.length));
-        this.gl.bindVertexArray(null);
+        this.gl.drawElements(this.gl.TRIANGLES, Math.floor(rSize * chunk.regular.length), this.gl.UNSIGNED_INT, 0);
         countTris += Math.floor(rSize * chunk.regular.length);
       }
 
@@ -7028,8 +7119,7 @@
         countDrawCalls++;
         this.gl.uniformMatrix4fv(this.unculled.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.unculled.vao);
-        this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.unculled.length));
-        this.gl.bindVertexArray(null);
+        this.gl.drawElements(this.gl.TRIANGLES, Math.floor(rSize * chunk.unculled.length), this.gl.UNSIGNED_INT, 0);
         countTris += Math.floor(rSize * chunk.unculled.length);
       }
 
@@ -7049,8 +7139,7 @@
         countDrawCalls++;
         this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
         this.gl.bindVertexArray(chunk.transparent.vao);
-        this.gl.drawArrays(this.gl.TRIANGLES, 0, Math.floor(rSize * chunk.transparent.length));
-        this.gl.bindVertexArray(null);
+        this.gl.drawElements(this.gl.TRIANGLES, Math.floor(rSize * chunk.transparent.length), this.gl.UNSIGNED_INT, 0);
         countTris += Math.floor(rSize * chunk.transparent.length);
       }
 
@@ -7080,7 +7169,7 @@
           this.gl.uniformMatrix4fv(this[program].uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
           this.gl.uniformMatrix4fv(this[program].uniformLocations.modelViewMatrix, false, modelViewMatrix);
           this.gl.bindVertexArray(chunk[program].vao);
-          this.gl.drawArrays(this.gl.TRIANGLES, 0, chunk[program].length);
+          this.gl.drawElements(this.gl.TRIANGLES, chunk[program].length, this.gl.UNSIGNED_INT, 0);
           this.gl.disable(this.gl.POLYGON_OFFSET_FILL);
           this.free(chunk);
         }
@@ -7735,6 +7824,7 @@
       let timers = {
         cpu: 1,
         gpu: 1,
+        delay: 0,
         total: 2
       };
       let frames = [];
@@ -7796,10 +7886,16 @@
         }
 
         timers.cpu = (timers.cpu * metricSmoothing + (performance.now() - start)) / (metricSmoothing + 1);
-        timers.total = (timers.total * metricSmoothing + (timers.cpu + timers.gpu)) / (metricSmoothing + 1);
+        timers.delay = (timers.delay * metricSmoothing + (start - fTime)) / (metricSmoothing + 1);
+        timers.total = (timers.total * metricSmoothing + (timers.cpu + timers.gpu + timers.delay)) / (metricSmoothing + 1);
         if (timers.total > 0.001) efps = 1000 / timers.total;
         lastFrame = start;
-        this.debug.FPS = `${Math.floor(efps).toString().padStart(4, " ")}/${frames.push(fTime)} CPU:${Math.floor(timers.cpu * 10) / 10} GPU:${Math.floor(timers.gpu * 10) / 10}`;
+
+        let f = val => (Math.floor(val * 10) / 10).toFixed(1);
+
+        let p = val => Math.floor(val).toString().padStart(4, " ");
+
+        this.debug.FPS = `${p(efps)}/${frames.push(fTime)} CPU:${f(timers.cpu)} GPU:${f(timers.gpu)} DEL:${f(timers.delay)}`;
       }
 
       var errCheck = 0;
