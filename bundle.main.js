@@ -5727,7 +5727,7 @@
         var start = performance.now();
         window.requestAnimationFrame(render.bind(this));
 
-        if (!timerPending) {
+        if (!timerPending && ext) {
           query = gl.createQuery();
           gl.beginQuery(ext.TIME_ELAPSED_EXT, query);
         }
@@ -5754,24 +5754,26 @@
         this.events.emit("render", renderEvent);
         let metricSmoothing = 60;
 
-        if (!timerPending) {
-          gl.endQuery(ext.TIME_ELAPSED_EXT);
-          timerPending = true;
-        } else {
-          setTimeout(function () {
-            if (!query) return;
-            let available = gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE);
-            let disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+        if (ext) {
+          if (!timerPending) {
+            gl.endQuery(ext.TIME_ELAPSED_EXT);
+            timerPending = true;
+          } else {
+            setTimeout(function () {
+              if (!query) return;
+              let available = gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE);
+              let disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
 
-            if (available && !disjoint) {
-              let timeElapsed = gl.getQueryParameter(query, gl.QUERY_RESULT) / 1000000;
-              timers.gpu = (timers.gpu * metricSmoothing + timeElapsed) / (metricSmoothing + 1);
-            }
+              if (available && !disjoint) {
+                let timeElapsed = gl.getQueryParameter(query, gl.QUERY_RESULT) / 1000000;
+                timers.gpu = (timers.gpu * metricSmoothing + timeElapsed) / (metricSmoothing + 1);
+              }
 
-            timerPending = false;
-            gl.deleteQuery(query);
-            query = false;
-          }.bind(this), 1);
+              timerPending = false;
+              gl.deleteQuery(query);
+              query = false;
+            }.bind(this), 1);
+          }
         }
 
         timers.cpu = (timers.cpu * metricSmoothing + (performance.now() - start)) / (metricSmoothing + 1);
