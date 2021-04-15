@@ -1697,6 +1697,24 @@
       return neighbors.slice(0, count);
     }
 
+    within(pt, dist) {
+      if (dist > Chunk.width * 3) throw new Error("unable to locate chunks at that range");
+      var neighbors = [];
+      var [x, y] = pt;
+      var {
+        chunk
+      } = this.locate(x, y, 0);
+      this.neighbors(chunk, 25, function (chunk) {
+        chunk.dist = dist$1(pt, chunk.center);
+        if (chunk.dist > dist) return;
+        neighbors.push(chunk);
+      });
+      neighbors.sort(function (a, b) {
+        return b.dist - a.dist;
+      });
+      return neighbors;
+    }
+
     neighbors(chunk, n, f) {
       if (n == 1) {
         f(chunk);
@@ -3065,7 +3083,7 @@
   const seed = 1018;
   const biomeBlend = 3; // 2, 3, 4
 
-  const biomeSmooth = 25; // 1, 9, 25
+  const biomeSmooth = 42; // 1 to Chunk.width*3, performance tuner
 
   const biomes = {
     "mountain": {
@@ -3116,6 +3134,10 @@
       this.lower = Chunk.depth * this.seafloor;
       this.middle = Chunk.depth * this.sealevel;
       this.higher = Chunk.depth * this.terraincap;
+      this.benchmarks = {
+        generation: 1,
+        population: 1
+      };
     }
 
     biome(chunk) {
@@ -3173,6 +3195,7 @@
     generate(chunk) {
       if (chunk.map) return;
       this.chunkMap.neighbors(chunk, 25, this.randomgen.bind(this));
+      var start = performance.now();
       if (!chunk.rng) debugger;
       var xBase = chunk.x;
       var yBase = chunk.y;
@@ -3184,35 +3207,50 @@
       var blockMap = new Uint8Array(whd);
       var heightMap = new Uint8Array(wh);
       var totalHeight = 0;
+      var curr = fromValues$1((xBase + .5) * width, (yBase + .5) * height);
+      var nearest = this.chunkMap.within(curr, biomeSmooth);
+      var distinctBiomes = false;
+
+      for (var i = 0; i < nearest.length; i++) {
+        if (nearest[i].biome != chunk.biome) {
+          distinctBiomes = true;
+          break;
+        }
+      }
 
       for (var x = 0; x < width; x++) {
         for (var y = 0; y < height; y++) {
           var highestBlock = 0;
           var samples = {};
-          var curr = fromValues$1(x + xBase * width, y + yBase * height);
-          var nearest = this.chunkMap.nearest(biomeSmooth, curr); // debugger
-
-          var bestBiome;
-          var sumInvDist = 0;
-
-          for (var i = 0; i < nearest.length; i++) {
-            var checkChunk = nearest[i];
-            checkChunk.invDist = (checkChunk.dist ? 1 / Math.pow(checkChunk.dist, biomeBlend) : 1) * biomes[checkChunk.biome].weight;
-            sumInvDist += checkChunk.invDist;
-          }
-
           var totalInvDist = 0;
 
-          for (var i = 0; i < nearest.length; i++) {
-            var neighbor = nearest[i];
-            var invDist = neighbor.invDist / sumInvDist;
-            samples[neighbor.biome] = samples[neighbor.biome] ? samples[neighbor.biome] + invDist : invDist;
+          if (distinctBiomes) {
+            curr = fromValues$1(x + xBase * width, y + yBase * height);
+            var bestBiome;
+            var sumInvDist = 0;
 
-            if (!bestBiome || samples[neighbor.biome] > samples[bestBiome]) {
-              bestBiome = neighbor.biome;
+            for (var i = 0; i < nearest.length; i++) {
+              var checkChunk = nearest[i];
+              checkChunk.dist = dist$1(curr, checkChunk.center);
+              checkChunk.invDist = (checkChunk.dist ? 1 / Math.pow(checkChunk.dist, biomeBlend) : 1) * biomes[checkChunk.biome].weight;
+              sumInvDist += checkChunk.invDist;
             }
 
-            totalInvDist += invDist;
+            for (var i = 0; i < nearest.length; i++) {
+              var neighbor = nearest[i];
+              var invDist = neighbor.invDist / sumInvDist;
+              samples[neighbor.biome] = samples[neighbor.biome] ? samples[neighbor.biome] + invDist : invDist;
+
+              if (!bestBiome || samples[neighbor.biome] > samples[bestBiome]) {
+                bestBiome = neighbor.biome;
+              }
+
+              totalInvDist += invDist;
+            }
+          } else {
+            samples[chunk.biome] = 1;
+            bestBiome = chunk.biome;
+            totalInvDist = 1;
           }
 
           var mountainSample = samples["mountain"] / totalInvDist;
@@ -3492,12 +3530,15 @@
       }
 
       chunk.rng = false;
+      var time = performance.now() - start;
+      this.benchmarks.generation = (this.benchmarks.generation + time) / 2;
       return chunk;
     }
 
     populateChunk(chunk) {
       if (chunk.populated) return;
       this.chunkMap.neighbors(chunk, 25, this.generate.bind(this));
+      var start = performance.now();
       var item;
 
       while (item = chunk.structures.pop()) {
@@ -3570,6 +3611,8 @@
       }
 
       chunk.populated = true;
+      var time = performance.now() - start;
+      this.benchmarks.population = (this.benchmarks.population + time) / 2;
     }
 
     setCircleIf(x, y, z, radius, dest, iff) {
@@ -4396,6 +4439,7 @@
       this.xEndBuffer.fill(0);
       this.yEndBuffer.fill(0);
       this.zEndBuffer.fill(0);
+      this.faces = [[], [], [], [], [], []];
     }
 
     occludes(check, targetID) {
@@ -4513,6 +4557,10 @@
         var faceData = this.faceData(chunk, block, x, y, z, face, occlusions);
         faceData = (faceData << 2) + targetID;
         this.faceBuffer[face][index] = faceData;
+
+        {
+          this.faces[face].push([x, y, z]);
+        }
       }
 
       if ( this.trackBounds) {
@@ -4522,12 +4570,6 @@
         if (x + 1 > this.bounds.x[1]) this.bounds.x[1] = x + 1;
         if (y + 1 > this.bounds.y[1]) this.bounds.y[1] = y + 1;
         if (z + 1 > this.bounds.z[1]) this.bounds.z[1] = z + 1;
-        if (this.xStartBuffer[this.index2d(y, z)] > x) this.xStartBuffer[this.index2d(y, z)] = x;
-        if (this.yStartBuffer[this.index2d(x, z)] > y) this.yStartBuffer[this.index2d(x, z)] = y;
-        if (this.zStartBuffer[this.index2d(y, x)] > z) this.zStartBuffer[this.index2d(y, x)] = z;
-        if (this.xEndBuffer[this.index2d(y, z)] < x + 1) this.xEndBuffer[this.index2d(y, z)] = x + 1;
-        if (this.yEndBuffer[this.index2d(x, z)] < y + 1) this.yEndBuffer[this.index2d(x, z)] = y + 1;
-        if (this.zEndBuffer[this.index2d(y, x)] < z + 1) this.zEndBuffer[this.index2d(y, x)] = z + 1;
       }
     }
 
@@ -4541,12 +4583,7 @@
 
     finish(chunkX, chunkY) {
       this.mergeFaces();
-      this.xStartBuffer.fill(this.width);
-      this.yStartBuffer.fill(this.height);
-      this.zStartBuffer.fill(this.depth);
-      this.xEndBuffer.fill(0);
-      this.yEndBuffer.fill(0);
-      this.zEndBuffer.fill(0);
+
       return new ChunkMesh(chunkX, chunkY, this.regular, this.unculled, this.transparent);
     }
 
@@ -4569,73 +4606,77 @@
         let [a3x, a3y, a3z, axis3length] = axis3;
         let [a2x, a2y, a2z, axis2length] = axis2;
         let [a1x, a1y, a1z, axis1length] = axis1;
+        let self = this;
 
-        for (var i = 0; i < axis3length; i++) {
-          for (var j = 0; j < axis2length; j++) {
-            var start = 0,
-                end = axis1length;
+        let addFace = function (x, y, z) {
+          let id = self.index3d(x, y, z);
+          let faceData = faceBuffer[id];
+          if (!faceData) return 1;
+          let primary = 1; // expand along primary axis as much as possible
 
-            if ( this.trackBounds) {
-              let rangeBufferID = face >= 4 ? this.index2d(j, i) : this.index2d(i, j);
-              start = this.startBuffers[face][rangeBufferID];
-              end = this.endBuffers[face][rangeBufferID];
+          while (k + primary < axis1length && greedy) {
+            let id = self.index3d(x + primary * a1x, y + primary * a1y, z + primary * a1z);
+            let thisFaceData = faceBuffer[id];
+            if (thisFaceData != faceData) break;
+            faceBuffer[id] = 0;
+            primary++;
+          } // then expand along the secondary axis
+
+
+          let secondary = 1;
+
+          while (j + secondary < axis2[3] && greedy) {
+            let ok = true;
+
+            for (let _p = 0; _p < primary; _p++) {
+              let id = self.index3d(x + _p * a1x + secondary * a2x, y + _p * a1y + secondary * a2y, z + _p * a1z + secondary * a2z);
+              let thisFaceData = faceBuffer[id];
+              if (thisFaceData == faceData) continue;
+              ok = false;
+              break;
             }
 
-            for (var k = start; k < end; k++) {
-              let x = i * a3x + j * a2x + k * a1x;
-              let y = i * a3y + j * a2y + k * a1y;
-              let z = i * a3z + j * a2z + k * a1z;
-              let id = this.index3d(x, y, z);
-              let faceData = faceBuffer[id];
-              if (!faceData) continue;
-              let primary = 1; // expand along primary axis as much as possible
+            if (!ok) break;
 
-              while (k + primary < axis1length && greedy) {
-                let id = this.index3d(x + primary * a1x, y + primary * a1y, z + primary * a1z);
-                let thisFaceData = faceBuffer[id];
-                if (thisFaceData != faceData) break;
-                faceBuffer[id] = 0;
-                primary++;
-              } // then expand along the secondary axis
+            for (let _p = 0; _p < primary; _p++) {
+              let id = self.index3d(x + _p * a1x + secondary * a2x, y + _p * a1y + secondary * a2y, z + _p * a1z + secondary * a2z);
+              faceBuffer[id] = 0;
+            }
 
+            secondary++;
+          }
 
-              let secondary = 1;
+          let _w = primary * a1x + secondary * a2x + 1 * a3x;
 
-              while (j + secondary < axis2[3] && greedy) {
-                let ok = true;
+          let _h = primary * a1y + secondary * a2y + 1 * a3y;
 
-                for (let _p = 0; _p < primary; _p++) {
-                  let id = this.index3d(x + _p * a1x + secondary * a2x, y + _p * a1y + secondary * a2y, z + _p * a1z + secondary * a2z);
-                  let thisFaceData = faceBuffer[id];
-                  if (thisFaceData == faceData) continue;
-                  ok = false;
-                  break;
-                }
+          let _d = primary * a1z + secondary * a2z + 1 * a3z;
 
-                if (!ok) break;
+          self.renderFace(x, y, z, _w, _h, _d, face == 4 ? secondary : primary, face == 4 ? primary : secondary, faceData, face);
+          return primary;
+        };
 
-                for (let _p = 0; _p < primary; _p++) {
-                  let id = this.index3d(x + _p * a1x + secondary * a2x, y + _p * a1y + secondary * a2y, z + _p * a1z + secondary * a2z);
-                  faceBuffer[id] = 0;
-                }
+        if (true) {
+          // use the facearray
+          for (let i = 0; i < this.faces[face].length; i++) {
+            let [x, y, z] = this.faces[face][i];
+            addFace(x, y, z);
+          }
+        } else {
+          // iterate through whole buffer
+          for (; i < axis3length; i++) {
+            for (var j; j < axis2length; j++) {
 
-                secondary++;
+              for (var k; k < end; k++) {
               }
-
-              let _w = primary * a1x + secondary * a2x + 1 * a3x;
-
-              let _h = primary * a1y + secondary * a2y + 1 * a3y;
-
-              let _d = primary * a1z + secondary * a2z + 1 * a3z;
-
-              this.renderFace(x, y, z, _w, _h, _d, face == 4 ? secondary : primary, face == 4 ? primary : secondary, faceData, face);
-              k += primary - 1;
             }
           }
         }
 
         faceBuffer.fill(0);
       }
+
+      this.faces = [[], [], [], [], [], []];
     } // render a quad to the buffer at x,y,z, of size w,h,d and texture scale txs, tys
 
 
@@ -5601,17 +5642,15 @@
     start() {
       window.setInterval(() => this.events.emit("step"), 25);
       var overlay = document.createElement("div");
-      overlay.style.position = "absolute";
-      overlay.style.top = "0";
-      overlay.style.left = "0";
-      overlay.style["font-family"] = "monospace";
+      overlay.style = "position:absolute;top:0;left:0;width:100%;font-family:monospace;";
       this.overlay = overlay;
+      var debugElement = document.createElement("div");
+      debugElement.style = "background:rgba(200,200,200,.5);outline:1px solid black;width:100%;";
+      this.debugElement = debugElement;
+      overlay.appendChild(debugElement);
       var optionsElement = document.createElement("div");
       this.optionsElement = optionsElement;
       overlay.appendChild(optionsElement);
-      var debugElement = document.createElement("div");
-      this.debugElement = debugElement;
-      overlay.appendChild(debugElement);
       var qualityElement = document.createElement("select");
       var values = ["Low", "Medium", "High", "Best"];
       qualityElement.name = "Quality Options";
@@ -5822,8 +5861,7 @@
       this.profiles[label].sum += ms;
       this.profiles[label].count += 1;
       var sum = Math.floor(this.profiles[label].sum * 10) / 10;
-      var avg = Math.floor(this.profiles[label].sum / this.profiles[label].count * 10) / 10;
-      this.debug[label] = "sum(" + sum + ") avg(" + avg + " x " + this.profiles[label].count + ")";
+      var avg = Math.floor(this.profiles[label].sum / this.profiles[label].count * 10) / 10; // this.debug[label] = "sum(" + sum + ") avg(" + avg + " x " + this.profiles[label].count + ")"
     }
 
     addBenchmark(ev) {
@@ -5847,7 +5885,7 @@
       }
 
       this.nextRefresh = now + 200;
-      var html = "<table>";
+      var html = `<table style="padding:4px">`;
       var props = [];
 
       for (var prop in this.debug) {
@@ -5860,8 +5898,8 @@
 
       for (var i = 0; i < props.length; i++) {
         if (isNaN(this.debug[props[i]])) {
-          html += "<tr><td>" + props[i] + "</td><td>" + this.debug[props[i]] + "</td></tr>";
-        } else {
+          html += `<tr><td style="padding:4px;font-weight:bold">` + props[i] + "</td><td>" + this.debug[props[i]] + "</td></tr>";
+        } else if (props[i].startsWith("auto")) {
           html += "<tr><td>" + props[i] + "</td><td>" + Math.floor(this.debug[props[i]] * 10) / 10 + "</td></tr>";
         }
       }
@@ -6239,7 +6277,7 @@
 
       let [x, y] = this.position;
       this.currentChunk = this.chunkMap.locate(x, y).chunk;
-      this.canvas.debug.biomes = JSON.stringify(this.chunkMap.biomes());
+      this.canvas.debug.Biomes = JSON.stringify(this.chunkMap.biomes());
       this.events.emit("position", {
         position: this.position
       });
@@ -6271,8 +6309,8 @@
         countFrustum,
         countTris
       } = this.renderer.render(ev, this.chunks);
-      this.canvas.debug.Chunks = "chunks: " + countChunks + "/" + this.chunks.chunks.size + " " + countFrustum + " ";
-      this.canvas.debug.Chunks += "draws: " + countDrawCalls + " polys: " + countTris;
+      this.canvas.debug.Chunks = `RenderDistance: ${this.cache.renderDistance} Chunks: ${countChunks}/${this.chunks.chunks.size} ${countFrustum} `;
+      this.canvas.debug.Chunks += `WebGL:${countDrawCalls} TRIS:${countTris}`;
     }
 
     step() {
@@ -6292,7 +6330,6 @@
       }
 
       if (center.id != this.cache.chunkID || rd != this.cache.renderDistance) {
-        this.canvas.debug["Render Distance"] = rd;
         this.pipe({
           "event": "chunk_of_interest",
           "x": center.x,
@@ -6407,6 +6444,18 @@
             "label": ev.label,
             "ms": ev.ms
           });
+
+          try {
+            let prof = `Ms `,
+                profs = this.canvas.profiles;
+            prof += `TFC:${Math.floor(profs.event_start_new_world.sum / profs.event_start_new_world.count * 10) / 10} `;
+            prof += `POP:${Math.floor(profs.chunk_populate.sum / profs.chunk_populate.count * 10) / 10} `;
+            prof += `GEN:${Math.floor(profs.chunk_generate.sum / profs.chunk_generate.count * 10) / 10} `;
+            prof += `TES:${Math.floor(profs.event_tesselate.sum / profs.event_tesselate.count * 10) / 10} `;
+            prof += `GCC:${Math.floor(profs.get_completed_chunk.sum / profs.get_completed_chunk.count * 10) / 10} `;
+            this.canvas.debug.Generation = prof;
+          } catch {}
+
           return;
 
         case "start":
@@ -6417,7 +6466,7 @@
             "event": "start_new_world"
           });
           this.canvas = new Canvas();
-          break;
+          return;
 
         case "prepare_world":
           this.chunks = new InfiniteChunkMap();
@@ -6505,6 +6554,16 @@
           event: "profile",
           label: "get_completed_chunk",
           ms: performance.now() - start
+        });
+        this.pipe({
+          event: "profile",
+          label: "chunk_generate",
+          ms: this.generator.benchmarks.generation
+        });
+        this.pipe({
+          event: "profile",
+          label: "chunk_populate",
+          ms: this.generator.benchmarks.population
         });
         chunk.sent = true;
         work++;
