@@ -1332,7 +1332,7 @@
   }, {
     name: "snow",
     color: [0.376, 0.501, 0.219],
-    atlas: [64, 64, 64, 64, 64, 64],
+    atlas: [66, 66, 66, 66, 66, 66],
     culls: 3,
     illumination: 0
   }, {
@@ -1698,13 +1698,13 @@
     }
 
     within(pt, dist) {
-      if (dist > Chunk.width * 3) throw new Error("unable to locate chunks at that range");
+      // if (dist>Chunk.width*3) throw new Error("unable to locate chunks at that range")
       var neighbors = [];
       var [x, y] = pt;
       var {
         chunk
       } = this.locate(x, y, 0);
-      this.neighbors(chunk, 25, function (chunk) {
+      this.neighbors(chunk, 49, function (chunk) {
         chunk.dist = dist$1(pt, chunk.center);
         if (chunk.dist > dist) return;
         neighbors.push(chunk);
@@ -1742,6 +1742,12 @@
 
       if (n == 25) {
         for (var i = chunk.x - 2; i <= chunk.x + 2; i++) for (var j = chunk.y - 2; j <= chunk.y + 2; j++) {
+          f(this.getChunk(i, j));
+        }
+      }
+
+      if (n == 49) {
+        for (var i = chunk.x - 3; i <= chunk.x + 3; i++) for (var j = chunk.y - 3; j <= chunk.y + 3; j++) {
           f(this.getChunk(i, j));
         }
       }
@@ -3083,48 +3089,64 @@
   const seed = 1018;
   const biomeBlend = 3; // 2, 3, 4
 
-  const biomeSmooth = 42; // 1 to Chunk.width*3, performance tuner
+  const biomeSmooth = 100; // 1 to Chunk.width*3, performance tuner
 
   const biomes = {
     "mountain": {
       "weight": 1,
-      "height": +.15,
-      "caves": 2
+      "height": +.5,
+      "caves": 2,
+      river: .85
     },
     "plains": {
       "weight": 2,
-      "height": +.05,
-      "caves": 1
+      "height": +.09,
+      "caves": 1,
+      river: .82
     },
     "desert": {
       "weight": 1,
       "height": +.04,
-      "caves": 1
+      "caves": 1,
+      river: .8
     },
     "forest": {
       "weight": 2,
       "height": +.03,
-      "caves": 1
+      "caves": 1,
+      river: .8
     },
     "ocean": {
       "weight": 1,
       "height": -.5,
-      "caves": 1
+      "caves": 1,
+      river: 1
     },
     "river": {
       "weight": 2,
       "height": -.2,
-      "caves": 1
+      "caves": 1,
+      river: .8
     }
   };
   class HillyGenerator {
     constructor(chunkMap) {
       this.seed =  seed ;
 
-      {
-        this.simplex = new OpenSimplexNoise(this.seed);
-        this.noise2D = this.simplex.noise2D.bind(this.simplex);
-        this.noise3D = this.simplex.noise3D.bind(this.simplex);
+      if (simplex == 0) {
+        var simplex = new OpenSimplexNoise(this.seed);
+
+        this.noise2D = (x, y) => {
+          simplex.noise2D(x, y) / 0.866;
+        };
+
+        this.noise3D = simplex.noise3D.bind(simplex);
+      } else {
+        var noise = new noisejs.Noise(Math.floor(this.seed % 35565));
+
+        this.noise2D = (x, y) => noise.simplex2(x, y);
+
+        this.noise3D = (x, y, z) => noise.simplex3(x, y, z);
       }
 
       this.chunkMap = chunkMap;
@@ -3155,6 +3177,10 @@
       // let allBiomes = Object.keys(biomes)
       // chunk.biome = allBiomes[Math.floor(chunk.rng()*allBiomes.length)]
 
+      let rVal = biomes[chunk.initialBiome].river;
+      var rivers = 1 - Math.abs(this.noise2D(chunk.x / (30 / rVal) + 5.5, chunk.y / (30 / rVal)) * 2); // rivers *= (1+this.noise2D(chunk.x / 50 + 5.5, chunk.y / 50))/2
+
+      if (rivers > rVal) chunk.biome = "river";
       chunk.center = fromValues$1((chunk.x + chunk.rng()) * Chunk.width, (chunk.y + chunk.rng()) * Chunk.height);
       var eh = biomes[chunk.biome].height;
       chunk.roughHeight = this.middle + eh * (eh < 0 ? this.middle - this.lower : this.higher - this.middle);
@@ -3170,18 +3196,16 @@
         chunk.caves.push({
           x: chunk.x * Chunk.width + Math.floor(chunk.rng() * Chunk.width),
           y: chunk.y * Chunk.height + Math.floor(chunk.rng() * Chunk.height),
-          z: Math.floor(heightRNG * (chunk.roughHeight * 1.2) + 5),
+          z: Math.floor(heightRNG * (chunk.roughHeight * .95) + 5),
           radius: radius
         });
       }
     }
 
     calculateBiome(chunk) {
-      var rivers = 1 - Math.abs(this.noise2D(chunk.x / 8 + 5.5, chunk.y / 8) * 2);
-      if (rivers > .89) return "river"; // return "forest"
-
-      var roughness = (this.noise2D(chunk.x / 20 + .5, chunk.y / 20) * 2 + this.noise2D(chunk.x / 200 + .5, chunk.y / 200)) / 3;
-      var moisture = (this.noise2D(chunk.x / 15 + .5, chunk.y / 15) * 2 + this.noise2D(chunk.x / 150 + .5, chunk.y / 150)) / 3; // return ["ocean","mountain","desert","plains","forest"][Math.floor(chunk.rng()*5)]
+      // return "plains"
+      var roughness = (this.noise2D(chunk.x / 30 + .5, chunk.y / 30) * 2 + this.noise2D(chunk.x / 200 + .5, chunk.y / 200)) / 3;
+      var moisture = (this.noise2D(chunk.x / 18 + .5, chunk.y / 18) * 2 + this.noise2D(chunk.x / 150 + .5, chunk.y / 150)) / 3; // return ["ocean","mountain","desert","plains","forest"][Math.floor(chunk.rng()*5)]
       // return "plains"
       // return roughness>0?"ocean":"forest"
 
@@ -3194,7 +3218,7 @@
 
     generate(chunk) {
       if (chunk.map) return;
-      this.chunkMap.neighbors(chunk, 25, this.randomgen.bind(this));
+      this.chunkMap.neighbors(chunk, 49, this.randomgen.bind(this));
       var start = performance.now();
       if (!chunk.rng) debugger;
       var xBase = chunk.x;
@@ -3262,9 +3286,9 @@
           var eh = 0;
 
           if (mountainSample > 0) {
-            var mountain = this.noise2D((x + xBase * width) / 60, (y + yBase * height) / 60);
-            mountain += this.noise2D((x + xBase * width) / 30, (y + yBase * height) / 30) * .5;
-            mountain += this.noise2D((x + xBase * width) / 15, (y + yBase * height) / 15) * .25;
+            var mountain = this.noise2D((x + xBase * width) / 140, (y + yBase * height) / 140);
+            mountain += this.noise2D((x + xBase * width) / 70, (y + yBase * height) / 70) * .5;
+            mountain += this.noise2D((x + xBase * width) / 35, (y + yBase * height) / 35) * .25;
             mountain /= 1.75;
 
             var _mountain = Math.sign(mountain) * Math.pow(mountain < 0 ? -mountain : mountain, 1.1);
@@ -3280,7 +3304,7 @@
 
             var _plains = Math.sign(plains) * Math.pow(plains < 0 ? -plains : plains, 1.5);
 
-            _plains = _plains * .2 + biomes["plains"].height;
+            _plains = _plains * .1 + biomes["plains"].height;
             eh += _plains * plainsSample;
           }
 
@@ -3338,7 +3362,8 @@
 
           var heightHere = this.middle + eh * (eh < 0 ? this.middle - this.lower : this.higher - this.middle);
           console.assert(heightHere > 0);
-          var snowModifier = this.noise2D((x + xBase * width) / 100, (y + yBase * height) / 100) * .5 + .5;
+          var snowModifier;
+          if (depth > this.higher - 30) snowModifier = this.noise2D((x + xBase * width) / 15, (y + yBase * height) / 15) * .5 + .5;
           var palette = [2, 6, 1, 10]; // grass, dirt, stone.... sand shores
 
           if (bestBiome == "desert") palette = [10, 11, 1, 6]; // sand, sandstone, stone... dirt shores
@@ -3361,7 +3386,7 @@
                 highestBlock = z;
               }
 
-              if (z > this.higher - 15 + 10 * snowModifier) {
+              if (z > this.higher - 30 + 10 * snowModifier) {
                 blockMap[Chunk.index3d(x, y, z)] = 5;
               } else if (z < heightHere - 3) {
                 blockMap[Chunk.index3d(x, y, z)] = palette[2];
@@ -3415,25 +3440,27 @@
       }
 
       if (chunk.biome == "plains") {
-        for (var i = 0; i < 5; i++) {
-          var x = Math.floor(chunk.rng() * width),
-              y = Math.floor(chunk.rng() * height);
-          var id = Chunk.index2d(x, y);
-          if (structures[id]) continue;
-          structures[id] = 1;
-          chunk.structures.push(["plant", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
+        if (chunk.rng() < .2) {
+          for (var i = 0; i < 5; i++) {
+            var x = Math.floor(chunk.rng() * width),
+                y = Math.floor(chunk.rng() * height);
+            var id = Chunk.index2d(x, y);
+            if (structures[id]) continue;
+            structures[id] = 1;
+            chunk.structures.push(["plant", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
+          }
+        } else {
+          for (var i = 0; i < 15; i++) {
+            var x = Math.floor(chunk.rng() * width),
+                y = Math.floor(chunk.rng() * height);
+            var id = Chunk.index2d(x, y);
+            if (structures[id]) continue;
+            structures[id] = 1;
+            chunk.structures.push(["tuft", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
+          }
         }
 
-        for (var i = 0; i < 15; i++) {
-          var x = Math.floor(chunk.rng() * width),
-              y = Math.floor(chunk.rng() * height);
-          var id = Chunk.index2d(x, y);
-          if (structures[id]) continue;
-          structures[id] = 1;
-          chunk.structures.push(["tuft", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
-        }
-
-        for (var i = 0; i < 1; i++) {
+        for (i = 0; i < (chunk.rng() < .1) ? 1 : 0; i++) {
           var x = Math.floor(chunk.rng() * width),
               y = Math.floor(chunk.rng() * height);
           var id = Chunk.index2d(x, y);
