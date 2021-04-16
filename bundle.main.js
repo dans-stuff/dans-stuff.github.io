@@ -4366,12 +4366,10 @@
   var seedRandom_1 = seedRandom.resetGlobal;
 
   const seed = 1018;
-  const biomeBlend = 3; // 2, 3, 4
 
   const biomeSmooth = 100; // 1 to Chunk.width*3, performance tuner
 
   const caveness = [1.5, 4]; // 1.8 to 4.3
-
   const biomes = {
     "mountain": {
       "weight": 1,
@@ -4383,7 +4381,7 @@
       "weight": 2,
       "height": +.09,
       "caves": 1,
-      river: .82
+      river: .88
     },
     "desert": {
       "weight": 1,
@@ -4476,16 +4474,16 @@
     }
 
     calculateBiome(chunk) {
-      // return "plains"
-      var roughness = (this.noise2D(chunk.x / 30 + .5, chunk.y / 30) * 2 + this.noise2D(chunk.x / 200 + .5, chunk.y / 200)) / 3;
-      var moisture = (this.noise2D(chunk.x / 18 + .5, chunk.y / 18) * 2 + this.noise2D(chunk.x / 150 + .5, chunk.y / 150)) / 3; // return ["ocean","mountain","desert","plains","forest"][Math.floor(chunk.rng()*5)]
+      // return "desert"
+      var roughness = (this.noise2D(chunk.x / 10 + .5, chunk.y / 10) * 2 + this.noise2D(chunk.x / 20 + .5, chunk.y / 20)) / 3;
+      var moisture = (this.noise2D(chunk.x / 8 + .5, chunk.y / 8) * 2 + this.noise2D(chunk.x / 16 + .5, chunk.y / 16)) / 3; // return ["ocean","mountain","desert","plains","forest"][Math.floor(chunk.rng()*5)]
       // return "plains"
       // return roughness>0?"ocean":"forest"
 
-      if (moisture > .07) return "ocean";
-      if (roughness > .1) return "mountain";
+      if (roughness > .3) return "mountain";
+      if (roughness < -.3) return "ocean";
       if (moisture < -.3) return "desert";
-      if (roughness < .1 && moisture > -.1) return "forest";
+      if (moisture > .3) return "forest";
       return "plains";
     }
 
@@ -4524,23 +4522,37 @@
 
           if (distinctBiomes) {
             curr = fromValues$2(x + xBase * width, y + yBase * height);
-            var bestBiome;
             var sumInvDist = 0;
 
             for (var i = 0; i < nearest.length; i++) {
               var checkChunk = nearest[i];
-              checkChunk.dist = dist$1(curr, checkChunk.center);
-              checkChunk.invDist = (checkChunk.dist ? 1 / Math.pow(checkChunk.dist, biomeBlend) : 1) * biomes[checkChunk.biome].weight;
+              let dist = dist$1(curr, checkChunk.center);
+              checkChunk.dist = dist;
+
+              if ( checkChunk.dist > 23) {
+                checkChunk.invDist = 0;
+                continue;
+              }
+
+              samples[checkChunk.biome] = 0; // checkChunk.invDist = (checkChunk.dist ? 1 / Math.pow(checkChunk.dist, biomeBlend) : 1) * biomes[checkChunk.biome].weight
+
+              checkChunk.invDist = 1 - checkChunk.dist / 23;
               sumInvDist += checkChunk.invDist;
             }
 
+            var bestBiome;
+            var bestSample = 0;
+
             for (var i = 0; i < nearest.length; i++) {
               var neighbor = nearest[i];
+              if ( neighbor.invDist == 0) continue;
               var invDist = neighbor.invDist / sumInvDist;
-              samples[neighbor.biome] = samples[neighbor.biome] ? samples[neighbor.biome] + invDist : invDist;
+              let sample = samples[neighbor.biome] + invDist;
+              samples[neighbor.biome] = sample;
 
-              if (!bestBiome || samples[neighbor.biome] > samples[bestBiome]) {
+              if (sample > bestSample) {
                 bestBiome = neighbor.biome;
+                bestSample = sample;
               }
 
               totalInvDist += invDist;
@@ -7721,7 +7733,7 @@
         chunk.shouldShow = true;
       }
 
-      var allowedWork = 2; // for every chunk, see if we need to free things
+      var allowedWork = 10; // for every chunk, see if we need to free things
 
       for (let chunk of this.chunks.chunks.values()) {
         // create or destroy the mesh
