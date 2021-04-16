@@ -2765,23 +2765,33 @@
 
   }
 
+  const ChunkData = {
+    width: 16,
+    height: 16,
+    depth: 256
+  };
+  // It also provides static methods/values concerning chunks
+
   class Chunk {
     constructor(x, y) {
       this.x = x;
       this.y = y;
       this.z = 0;
-      this.id = Chunk.getScudzik(x, y);
-      this.bbox = [[x, y, 0], [(x + 1) * Chunk.width + 1, (y + 1) * Chunk.height + 1, Chunk.depth + 1]];
+      this.id = Chunk.getScudzik(x, y); // this.bbox = [[x, y, 0], [(x + 1) * Chunk.width + 1, (y + 1) * Chunk.height + 1, Chunk.depth + 1]]
     } // at provides low-level query for a specific value
 
 
     at(x, y, z) {
-      return this.map[z + Chunk.depth * (y + Chunk.width * x)];
+      {
+        return this.map[(y + (x << 4) << 8) + z];
+      }
     } // set provides low-level writing to the voxel data
 
 
     set(x, y, z, block) {
-      this.map[z + Chunk.depth * (y + Chunk.width * x)] = block;
+      {
+        this.map[(y + (x << 4) << 8) + z] = block;
+      }
     } // voxelData is an expensive but easy to use query operation
 
 
@@ -2822,21 +2832,25 @@
 
 
     static index3d(x, y, z) {
-      return z + Chunk.depth * (y + Chunk.width * x);
+      {
+        return (y + (x << 4) << 8) + z;
+      }
     }
 
     static index2d(x, y) {
-      return x + Chunk.height * y;
+      {
+        return x + (y << 4);
+      }
     }
 
   } // PaddedChunk is a low-level container for raw chunk data with a shell
   // All queries are offset automatically, so x=-1 would query at x=0 in the maps
 
-  _defineProperty(Chunk, "width", 16);
+  _defineProperty(Chunk, "width", ChunkData.width);
 
-  _defineProperty(Chunk, "height", 16);
+  _defineProperty(Chunk, "height", ChunkData.height);
 
-  _defineProperty(Chunk, "depth", 256);
+  _defineProperty(Chunk, "depth", ChunkData.depth);
 
   class PaddedChunk {
     constructor(x, y) {
@@ -2846,20 +2860,26 @@
 
 
     at(x, y, z) {
-      return this.map[z + 1 + PaddedChunk.depth * (y + 1 + PaddedChunk.width * (x + 1))];
+      {
+        return this.map[4644 * x + 258 * y + z + 4903];
+      }
     } // at provides low-level query for a specific value
 
 
     light(x, y, z) {
-      var here = this.at(x, y, z);
-      let {
-        illumination
-      } = blocks[here];
-      return this.lights[z + 1 + PaddedChunk.depth * (y + 1 + PaddedChunk.width * (x + 1))] + illumination;
+      {
+        let id = 4644 * x + 258 * y + z + 4903;
+        let {
+          illumination
+        } = blocks[this.map[id]];
+        return this.lights[id] + illumination;
+      }
     }
 
     static index3d(x, y, z) {
-      return z + 1 + PaddedChunk.depth * (y + 1 + PaddedChunk.width * (x + 1));
+      {
+        return 4644 * x + 258 * y + z + 4903;
+      }
     }
 
     static index2d(x, y) {
@@ -2940,8 +2960,8 @@
     }
 
     locate(x, y, z) {
-      var xChunk = Math.floor(x / Chunk.width);
-      var yChunk = Math.floor(y / Chunk.height);
+      var xChunk =  x >> 4 ;
+      var yChunk =  y >> 4 ;
       var chunk = this.getChunk(xChunk, yChunk);
       return {
         chunk: chunk,
