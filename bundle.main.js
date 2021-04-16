@@ -750,6 +750,54 @@
     return out;
   }
   /**
+   * Creates a new vec4 initialized with values from an existing vector
+   *
+   * @param {vec4} a vector to clone
+   * @returns {vec4} a new 4D vector
+   */
+
+  function clone$2(a) {
+    var out = new ARRAY_TYPE(4);
+    out[0] = a[0];
+    out[1] = a[1];
+    out[2] = a[2];
+    out[3] = a[3];
+    return out;
+  }
+  /**
+   * Creates a new vec4 initialized with the given values
+   *
+   * @param {Number} x X component
+   * @param {Number} y Y component
+   * @param {Number} z Z component
+   * @param {Number} w W component
+   * @returns {vec4} a new 4D vector
+   */
+
+  function fromValues$1(x, y, z, w) {
+    var out = new ARRAY_TYPE(4);
+    out[0] = x;
+    out[1] = y;
+    out[2] = z;
+    out[3] = w;
+    return out;
+  }
+  /**
+   * Copy the values from one vec4 to another
+   *
+   * @param {vec4} out the receiving vector
+   * @param {vec4} a the source vector
+   * @returns {vec4} out
+   */
+
+  function copy$2(out, a) {
+    out[0] = a[0];
+    out[1] = a[1];
+    out[2] = a[2];
+    out[3] = a[3];
+    return out;
+  }
+  /**
    * Normalize a vec4
    *
    * @param {vec4} out the receiving vector
@@ -1153,7 +1201,7 @@
    * @returns {vec2} a new 2D vector
    */
 
-  function fromValues$1(x, y) {
+  function fromValues$2(x, y) {
     var out = new ARRAY_TYPE(2);
     out[0] = x;
     out[1] = y;
@@ -1403,9 +1451,1319 @@
     atlas: [50, 50, 50, 50, 50, 50],
     culls: 3,
     illumination: 0
+  }, {
+    name: "mossy_brick",
+    atlas: [100, 100, 100, 100, 100, 100],
+    culls: 3,
+    illumination: 0
+  }, {
+    name: "patch",
+    atlas: [64, 64, 64, 64, 64, 64],
+    culls: 3,
+    illumination: 0
   }];
 
-  // It also provides static methods/values concerning chunks
+  const _lut = [];
+
+  for (let i = 0; i < 256; i++) {
+    _lut[i] = (i < 16 ? '0' : '') + i.toString(16);
+  }
+
+  let _seed = 1234567;
+  const MathUtils = {
+    DEG2RAD: Math.PI / 180,
+    RAD2DEG: 180 / Math.PI,
+    generateUUID: function () {
+      // http://stackoverflow.com/questions/105034/how-to-create-a-guid-uuid-in-javascript/21963136#21963136
+      const d0 = Math.random() * 0xffffffff | 0;
+      const d1 = Math.random() * 0xffffffff | 0;
+      const d2 = Math.random() * 0xffffffff | 0;
+      const d3 = Math.random() * 0xffffffff | 0;
+      const uuid = _lut[d0 & 0xff] + _lut[d0 >> 8 & 0xff] + _lut[d0 >> 16 & 0xff] + _lut[d0 >> 24 & 0xff] + '-' + _lut[d1 & 0xff] + _lut[d1 >> 8 & 0xff] + '-' + _lut[d1 >> 16 & 0x0f | 0x40] + _lut[d1 >> 24 & 0xff] + '-' + _lut[d2 & 0x3f | 0x80] + _lut[d2 >> 8 & 0xff] + '-' + _lut[d2 >> 16 & 0xff] + _lut[d2 >> 24 & 0xff] + _lut[d3 & 0xff] + _lut[d3 >> 8 & 0xff] + _lut[d3 >> 16 & 0xff] + _lut[d3 >> 24 & 0xff]; // .toUpperCase() here flattens concatenated strings to save heap memory space.
+
+      return uuid.toUpperCase();
+    },
+    clamp: function (value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    },
+    // compute euclidian modulo of m % n
+    // https://en.wikipedia.org/wiki/Modulo_operation
+    euclideanModulo: function (n, m) {
+      return (n % m + m) % m;
+    },
+    // Linear mapping from range <a1, a2> to range <b1, b2>
+    mapLinear: function (x, a1, a2, b1, b2) {
+      return b1 + (x - a1) * (b2 - b1) / (a2 - a1);
+    },
+    // https://www.gamedev.net/tutorials/programming/general-and-gameplay-programming/inverse-lerp-a-super-useful-yet-often-overlooked-function-r5230/
+    inverseLerp: function (x, y, value) {
+      if (x !== y) {
+        return (value - x) / (y - x);
+      } else {
+        return 0;
+      }
+    },
+    // https://en.wikipedia.org/wiki/Linear_interpolation
+    lerp: function (x, y, t) {
+      return (1 - t) * x + t * y;
+    },
+    // http://www.rorydriscoll.com/2016/03/07/frame-rate-independent-damping-using-lerp/
+    damp: function (x, y, lambda, dt) {
+      return MathUtils.lerp(x, y, 1 - Math.exp(-lambda * dt));
+    },
+    // https://www.desmos.com/calculator/vcsjnyz7x4
+    pingpong: function (x, length = 1) {
+      return length - Math.abs(MathUtils.euclideanModulo(x, length * 2) - length);
+    },
+    // http://en.wikipedia.org/wiki/Smoothstep
+    smoothstep: function (x, min, max) {
+      if (x <= min) return 0;
+      if (x >= max) return 1;
+      x = (x - min) / (max - min);
+      return x * x * (3 - 2 * x);
+    },
+    smootherstep: function (x, min, max) {
+      if (x <= min) return 0;
+      if (x >= max) return 1;
+      x = (x - min) / (max - min);
+      return x * x * x * (x * (x * 6 - 15) + 10);
+    },
+    // Random integer from <low, high> interval
+    randInt: function (low, high) {
+      return low + Math.floor(Math.random() * (high - low + 1));
+    },
+    // Random float from <low, high> interval
+    randFloat: function (low, high) {
+      return low + Math.random() * (high - low);
+    },
+    // Random float from <-range/2, range/2> interval
+    randFloatSpread: function (range) {
+      return range * (0.5 - Math.random());
+    },
+    // Deterministic pseudo-random float in the interval [ 0, 1 ]
+    seededRandom: function (s) {
+      if (s !== undefined) _seed = s % 2147483647; // Park-Miller algorithm
+
+      _seed = _seed * 16807 % 2147483647;
+      return (_seed - 1) / 2147483646;
+    },
+    degToRad: function (degrees) {
+      return degrees * MathUtils.DEG2RAD;
+    },
+    radToDeg: function (radians) {
+      return radians * MathUtils.RAD2DEG;
+    },
+    isPowerOfTwo: function (value) {
+      return (value & value - 1) === 0 && value !== 0;
+    },
+    ceilPowerOfTwo: function (value) {
+      return Math.pow(2, Math.ceil(Math.log(value) / Math.LN2));
+    },
+    floorPowerOfTwo: function (value) {
+      return Math.pow(2, Math.floor(Math.log(value) / Math.LN2));
+    },
+    setQuaternionFromProperEuler: function (q, a, b, c, order) {
+      // Intrinsic Proper Euler Angles - see https://en.wikipedia.org/wiki/Euler_angles
+      // rotations are applied to the axes in the order specified by 'order'
+      // rotation by angle 'a' is applied first, then by angle 'b', then by angle 'c'
+      // angles are in radians
+      const cos = Math.cos;
+      const sin = Math.sin;
+      const c2 = cos(b / 2);
+      const s2 = sin(b / 2);
+      const c13 = cos((a + c) / 2);
+      const s13 = sin((a + c) / 2);
+      const c1_3 = cos((a - c) / 2);
+      const s1_3 = sin((a - c) / 2);
+      const c3_1 = cos((c - a) / 2);
+      const s3_1 = sin((c - a) / 2);
+
+      switch (order) {
+        case 'XYX':
+          q.set(c2 * s13, s2 * c1_3, s2 * s1_3, c2 * c13);
+          break;
+
+        case 'YZY':
+          q.set(s2 * s1_3, c2 * s13, s2 * c1_3, c2 * c13);
+          break;
+
+        case 'ZXZ':
+          q.set(s2 * c1_3, s2 * s1_3, c2 * s13, c2 * c13);
+          break;
+
+        case 'XZX':
+          q.set(c2 * s13, s2 * s3_1, s2 * c3_1, c2 * c13);
+          break;
+
+        case 'YXY':
+          q.set(s2 * c3_1, c2 * s13, s2 * s3_1, c2 * c13);
+          break;
+
+        case 'ZYZ':
+          q.set(s2 * s3_1, s2 * c3_1, c2 * s13, c2 * c13);
+          break;
+
+        default:
+          console.warn('THREE.MathUtils: .setQuaternionFromProperEuler() encountered an unknown order: ' + order);
+      }
+    }
+  };
+
+  class Quaternion {
+    constructor(x = 0, y = 0, z = 0, w = 1) {
+      this._x = x;
+      this._y = y;
+      this._z = z;
+      this._w = w;
+    }
+
+    static slerp(qa, qb, qm, t) {
+      console.warn('THREE.Quaternion: Static .slerp() has been deprecated. Use qm.slerpQuaternions( qa, qb, t ) instead.');
+      return qm.slerpQuaternions(qa, qb, t);
+    }
+
+    static slerpFlat(dst, dstOffset, src0, srcOffset0, src1, srcOffset1, t) {
+      // fuzz-free, array-based Quaternion SLERP operation
+      let x0 = src0[srcOffset0 + 0],
+          y0 = src0[srcOffset0 + 1],
+          z0 = src0[srcOffset0 + 2],
+          w0 = src0[srcOffset0 + 3];
+      const x1 = src1[srcOffset1 + 0],
+            y1 = src1[srcOffset1 + 1],
+            z1 = src1[srcOffset1 + 2],
+            w1 = src1[srcOffset1 + 3];
+
+      if (t === 0) {
+        dst[dstOffset + 0] = x0;
+        dst[dstOffset + 1] = y0;
+        dst[dstOffset + 2] = z0;
+        dst[dstOffset + 3] = w0;
+        return;
+      }
+
+      if (t === 1) {
+        dst[dstOffset + 0] = x1;
+        dst[dstOffset + 1] = y1;
+        dst[dstOffset + 2] = z1;
+        dst[dstOffset + 3] = w1;
+        return;
+      }
+
+      if (w0 !== w1 || x0 !== x1 || y0 !== y1 || z0 !== z1) {
+        let s = 1 - t;
+        const cos = x0 * x1 + y0 * y1 + z0 * z1 + w0 * w1,
+              dir = cos >= 0 ? 1 : -1,
+              sqrSin = 1 - cos * cos; // Skip the Slerp for tiny steps to avoid numeric problems:
+
+        if (sqrSin > Number.EPSILON) {
+          const sin = Math.sqrt(sqrSin),
+                len = Math.atan2(sin, cos * dir);
+          s = Math.sin(s * len) / sin;
+          t = Math.sin(t * len) / sin;
+        }
+
+        const tDir = t * dir;
+        x0 = x0 * s + x1 * tDir;
+        y0 = y0 * s + y1 * tDir;
+        z0 = z0 * s + z1 * tDir;
+        w0 = w0 * s + w1 * tDir; // Normalize in case we just did a lerp:
+
+        if (s === 1 - t) {
+          const f = 1 / Math.sqrt(x0 * x0 + y0 * y0 + z0 * z0 + w0 * w0);
+          x0 *= f;
+          y0 *= f;
+          z0 *= f;
+          w0 *= f;
+        }
+      }
+
+      dst[dstOffset] = x0;
+      dst[dstOffset + 1] = y0;
+      dst[dstOffset + 2] = z0;
+      dst[dstOffset + 3] = w0;
+    }
+
+    static multiplyQuaternionsFlat(dst, dstOffset, src0, srcOffset0, src1, srcOffset1) {
+      const x0 = src0[srcOffset0];
+      const y0 = src0[srcOffset0 + 1];
+      const z0 = src0[srcOffset0 + 2];
+      const w0 = src0[srcOffset0 + 3];
+      const x1 = src1[srcOffset1];
+      const y1 = src1[srcOffset1 + 1];
+      const z1 = src1[srcOffset1 + 2];
+      const w1 = src1[srcOffset1 + 3];
+      dst[dstOffset] = x0 * w1 + w0 * x1 + y0 * z1 - z0 * y1;
+      dst[dstOffset + 1] = y0 * w1 + w0 * y1 + z0 * x1 - x0 * z1;
+      dst[dstOffset + 2] = z0 * w1 + w0 * z1 + x0 * y1 - y0 * x1;
+      dst[dstOffset + 3] = w0 * w1 - x0 * x1 - y0 * y1 - z0 * z1;
+      return dst;
+    }
+
+    get x() {
+      return this._x;
+    }
+
+    set x(value) {
+      this._x = value;
+
+      this._onChangeCallback();
+    }
+
+    get y() {
+      return this._y;
+    }
+
+    set y(value) {
+      this._y = value;
+
+      this._onChangeCallback();
+    }
+
+    get z() {
+      return this._z;
+    }
+
+    set z(value) {
+      this._z = value;
+
+      this._onChangeCallback();
+    }
+
+    get w() {
+      return this._w;
+    }
+
+    set w(value) {
+      this._w = value;
+
+      this._onChangeCallback();
+    }
+
+    set(x, y, z, w) {
+      this._x = x;
+      this._y = y;
+      this._z = z;
+      this._w = w;
+
+      this._onChangeCallback();
+
+      return this;
+    }
+
+    clone() {
+      return new this.constructor(this._x, this._y, this._z, this._w);
+    }
+
+    copy(quaternion) {
+      this._x = quaternion.x;
+      this._y = quaternion.y;
+      this._z = quaternion.z;
+      this._w = quaternion.w;
+
+      this._onChangeCallback();
+
+      return this;
+    }
+
+    setFromEuler(euler, update) {
+      if (!(euler && euler.isEuler)) {
+        throw new Error('THREE.Quaternion: .setFromEuler() now expects an Euler rotation rather than a Vector3 and order.');
+      }
+
+      const x = euler._x,
+            y = euler._y,
+            z = euler._z,
+            order = euler._order; // http://www.mathworks.com/matlabcentral/fileexchange/
+      // 	20696-function-to-convert-between-dcm-euler-angles-quaternions-and-euler-vectors/
+      //	content/SpinCalc.m
+
+      const cos = Math.cos;
+      const sin = Math.sin;
+      const c1 = cos(x / 2);
+      const c2 = cos(y / 2);
+      const c3 = cos(z / 2);
+      const s1 = sin(x / 2);
+      const s2 = sin(y / 2);
+      const s3 = sin(z / 2);
+
+      switch (order) {
+        case 'XYZ':
+          this._x = s1 * c2 * c3 + c1 * s2 * s3;
+          this._y = c1 * s2 * c3 - s1 * c2 * s3;
+          this._z = c1 * c2 * s3 + s1 * s2 * c3;
+          this._w = c1 * c2 * c3 - s1 * s2 * s3;
+          break;
+
+        case 'YXZ':
+          this._x = s1 * c2 * c3 + c1 * s2 * s3;
+          this._y = c1 * s2 * c3 - s1 * c2 * s3;
+          this._z = c1 * c2 * s3 - s1 * s2 * c3;
+          this._w = c1 * c2 * c3 + s1 * s2 * s3;
+          break;
+
+        case 'ZXY':
+          this._x = s1 * c2 * c3 - c1 * s2 * s3;
+          this._y = c1 * s2 * c3 + s1 * c2 * s3;
+          this._z = c1 * c2 * s3 + s1 * s2 * c3;
+          this._w = c1 * c2 * c3 - s1 * s2 * s3;
+          break;
+
+        case 'ZYX':
+          this._x = s1 * c2 * c3 - c1 * s2 * s3;
+          this._y = c1 * s2 * c3 + s1 * c2 * s3;
+          this._z = c1 * c2 * s3 - s1 * s2 * c3;
+          this._w = c1 * c2 * c3 + s1 * s2 * s3;
+          break;
+
+        case 'YZX':
+          this._x = s1 * c2 * c3 + c1 * s2 * s3;
+          this._y = c1 * s2 * c3 + s1 * c2 * s3;
+          this._z = c1 * c2 * s3 - s1 * s2 * c3;
+          this._w = c1 * c2 * c3 - s1 * s2 * s3;
+          break;
+
+        case 'XZY':
+          this._x = s1 * c2 * c3 - c1 * s2 * s3;
+          this._y = c1 * s2 * c3 - s1 * c2 * s3;
+          this._z = c1 * c2 * s3 + s1 * s2 * c3;
+          this._w = c1 * c2 * c3 + s1 * s2 * s3;
+          break;
+
+        default:
+          console.warn('THREE.Quaternion: .setFromEuler() encountered an unknown order: ' + order);
+      }
+
+      if (update !== false) this._onChangeCallback();
+      return this;
+    }
+
+    setFromAxisAngle(axis, angle) {
+      // http://www.euclideanspace.com/maths/geometry/rotations/conversions/angleToQuaternion/index.htm
+      // assumes axis is normalized
+      const halfAngle = angle / 2,
+            s = Math.sin(halfAngle);
+      this._x = axis.x * s;
+      this._y = axis.y * s;
+      this._z = axis.z * s;
+      this._w = Math.cos(halfAngle);
+
+      this._onChangeCallback();
+
+      return this;
+    }
+
+    setFromRotationMatrix(m) {
+      // http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/index.htm
+      // assumes the upper 3x3 of m is a pure rotation matrix (i.e, unscaled)
+      const te = m.elements,
+            m11 = te[0],
+            m12 = te[4],
+            m13 = te[8],
+            m21 = te[1],
+            m22 = te[5],
+            m23 = te[9],
+            m31 = te[2],
+            m32 = te[6],
+            m33 = te[10],
+            trace = m11 + m22 + m33;
+
+      if (trace > 0) {
+        const s = 0.5 / Math.sqrt(trace + 1.0);
+        this._w = 0.25 / s;
+        this._x = (m32 - m23) * s;
+        this._y = (m13 - m31) * s;
+        this._z = (m21 - m12) * s;
+      } else if (m11 > m22 && m11 > m33) {
+        const s = 2.0 * Math.sqrt(1.0 + m11 - m22 - m33);
+        this._w = (m32 - m23) / s;
+        this._x = 0.25 * s;
+        this._y = (m12 + m21) / s;
+        this._z = (m13 + m31) / s;
+      } else if (m22 > m33) {
+        const s = 2.0 * Math.sqrt(1.0 + m22 - m11 - m33);
+        this._w = (m13 - m31) / s;
+        this._x = (m12 + m21) / s;
+        this._y = 0.25 * s;
+        this._z = (m23 + m32) / s;
+      } else {
+        const s = 2.0 * Math.sqrt(1.0 + m33 - m11 - m22);
+        this._w = (m21 - m12) / s;
+        this._x = (m13 + m31) / s;
+        this._y = (m23 + m32) / s;
+        this._z = 0.25 * s;
+      }
+
+      this._onChangeCallback();
+
+      return this;
+    }
+
+    setFromUnitVectors(vFrom, vTo) {
+      // assumes direction vectors vFrom and vTo are normalized
+      let r = vFrom.dot(vTo) + 1;
+
+      if (r < Number.EPSILON) {
+        // vFrom and vTo point in opposite directions
+        r = 0;
+
+        if (Math.abs(vFrom.x) > Math.abs(vFrom.z)) {
+          this._x = -vFrom.y;
+          this._y = vFrom.x;
+          this._z = 0;
+          this._w = r;
+        } else {
+          this._x = 0;
+          this._y = -vFrom.z;
+          this._z = vFrom.y;
+          this._w = r;
+        }
+      } else {
+        // crossVectors( vFrom, vTo ); // inlined to avoid cyclic dependency on Vector3
+        this._x = vFrom.y * vTo.z - vFrom.z * vTo.y;
+        this._y = vFrom.z * vTo.x - vFrom.x * vTo.z;
+        this._z = vFrom.x * vTo.y - vFrom.y * vTo.x;
+        this._w = r;
+      }
+
+      return this.normalize();
+    }
+
+    angleTo(q) {
+      return 2 * Math.acos(Math.abs(MathUtils.clamp(this.dot(q), -1, 1)));
+    }
+
+    rotateTowards(q, step) {
+      const angle = this.angleTo(q);
+      if (angle === 0) return this;
+      const t = Math.min(1, step / angle);
+      this.slerp(q, t);
+      return this;
+    }
+
+    identity() {
+      return this.set(0, 0, 0, 1);
+    }
+
+    invert() {
+      // quaternion is assumed to have unit length
+      return this.conjugate();
+    }
+
+    conjugate() {
+      this._x *= -1;
+      this._y *= -1;
+      this._z *= -1;
+
+      this._onChangeCallback();
+
+      return this;
+    }
+
+    dot(v) {
+      return this._x * v._x + this._y * v._y + this._z * v._z + this._w * v._w;
+    }
+
+    lengthSq() {
+      return this._x * this._x + this._y * this._y + this._z * this._z + this._w * this._w;
+    }
+
+    length() {
+      return Math.sqrt(this._x * this._x + this._y * this._y + this._z * this._z + this._w * this._w);
+    }
+
+    normalize() {
+      let l = this.length();
+
+      if (l === 0) {
+        this._x = 0;
+        this._y = 0;
+        this._z = 0;
+        this._w = 1;
+      } else {
+        l = 1 / l;
+        this._x = this._x * l;
+        this._y = this._y * l;
+        this._z = this._z * l;
+        this._w = this._w * l;
+      }
+
+      this._onChangeCallback();
+
+      return this;
+    }
+
+    multiply(q, p) {
+      if (p !== undefined) {
+        console.warn('THREE.Quaternion: .multiply() now only accepts one argument. Use .multiplyQuaternions( a, b ) instead.');
+        return this.multiplyQuaternions(q, p);
+      }
+
+      return this.multiplyQuaternions(this, q);
+    }
+
+    premultiply(q) {
+      return this.multiplyQuaternions(q, this);
+    }
+
+    multiplyQuaternions(a, b) {
+      // from http://www.euclideanspace.com/maths/algebra/realNormedAlgebra/quaternions/code/index.htm
+      const qax = a._x,
+            qay = a._y,
+            qaz = a._z,
+            qaw = a._w;
+      const qbx = b._x,
+            qby = b._y,
+            qbz = b._z,
+            qbw = b._w;
+      this._x = qax * qbw + qaw * qbx + qay * qbz - qaz * qby;
+      this._y = qay * qbw + qaw * qby + qaz * qbx - qax * qbz;
+      this._z = qaz * qbw + qaw * qbz + qax * qby - qay * qbx;
+      this._w = qaw * qbw - qax * qbx - qay * qby - qaz * qbz;
+
+      this._onChangeCallback();
+
+      return this;
+    }
+
+    slerp(qb, t) {
+      if (t === 0) return this;
+      if (t === 1) return this.copy(qb);
+      const x = this._x,
+            y = this._y,
+            z = this._z,
+            w = this._w; // http://www.euclideanspace.com/maths/algebra/realNormedAlgebra/quaternions/slerp/
+
+      let cosHalfTheta = w * qb._w + x * qb._x + y * qb._y + z * qb._z;
+
+      if (cosHalfTheta < 0) {
+        this._w = -qb._w;
+        this._x = -qb._x;
+        this._y = -qb._y;
+        this._z = -qb._z;
+        cosHalfTheta = -cosHalfTheta;
+      } else {
+        this.copy(qb);
+      }
+
+      if (cosHalfTheta >= 1.0) {
+        this._w = w;
+        this._x = x;
+        this._y = y;
+        this._z = z;
+        return this;
+      }
+
+      const sqrSinHalfTheta = 1.0 - cosHalfTheta * cosHalfTheta;
+
+      if (sqrSinHalfTheta <= Number.EPSILON) {
+        const s = 1 - t;
+        this._w = s * w + t * this._w;
+        this._x = s * x + t * this._x;
+        this._y = s * y + t * this._y;
+        this._z = s * z + t * this._z;
+        this.normalize();
+
+        this._onChangeCallback();
+
+        return this;
+      }
+
+      const sinHalfTheta = Math.sqrt(sqrSinHalfTheta);
+      const halfTheta = Math.atan2(sinHalfTheta, cosHalfTheta);
+      const ratioA = Math.sin((1 - t) * halfTheta) / sinHalfTheta,
+            ratioB = Math.sin(t * halfTheta) / sinHalfTheta;
+      this._w = w * ratioA + this._w * ratioB;
+      this._x = x * ratioA + this._x * ratioB;
+      this._y = y * ratioA + this._y * ratioB;
+      this._z = z * ratioA + this._z * ratioB;
+
+      this._onChangeCallback();
+
+      return this;
+    }
+
+    slerpQuaternions(qa, qb, t) {
+      this.copy(qa).slerp(qb, t);
+    }
+
+    equals(quaternion) {
+      return quaternion._x === this._x && quaternion._y === this._y && quaternion._z === this._z && quaternion._w === this._w;
+    }
+
+    fromArray(array, offset = 0) {
+      this._x = array[offset];
+      this._y = array[offset + 1];
+      this._z = array[offset + 2];
+      this._w = array[offset + 3];
+
+      this._onChangeCallback();
+
+      return this;
+    }
+
+    toArray(array = [], offset = 0) {
+      array[offset] = this._x;
+      array[offset + 1] = this._y;
+      array[offset + 2] = this._z;
+      array[offset + 3] = this._w;
+      return array;
+    }
+
+    fromBufferAttribute(attribute, index) {
+      this._x = attribute.getX(index);
+      this._y = attribute.getY(index);
+      this._z = attribute.getZ(index);
+      this._w = attribute.getW(index);
+      return this;
+    }
+
+    _onChange(callback) {
+      this._onChangeCallback = callback;
+      return this;
+    }
+
+    _onChangeCallback() {}
+
+  }
+
+  Quaternion.prototype.isQuaternion = true;
+
+  class Vector3 {
+    constructor(x = 0, y = 0, z = 0) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+    }
+
+    set(x, y, z) {
+      if (z === undefined) z = this.z; // sprite.scale.set(x,y)
+
+      this.x = x;
+      this.y = y;
+      this.z = z;
+      return this;
+    }
+
+    setScalar(scalar) {
+      this.x = scalar;
+      this.y = scalar;
+      this.z = scalar;
+      return this;
+    }
+
+    setX(x) {
+      this.x = x;
+      return this;
+    }
+
+    setY(y) {
+      this.y = y;
+      return this;
+    }
+
+    setZ(z) {
+      this.z = z;
+      return this;
+    }
+
+    setComponent(index, value) {
+      switch (index) {
+        case 0:
+          this.x = value;
+          break;
+
+        case 1:
+          this.y = value;
+          break;
+
+        case 2:
+          this.z = value;
+          break;
+
+        default:
+          throw new Error('index is out of range: ' + index);
+      }
+
+      return this;
+    }
+
+    getComponent(index) {
+      switch (index) {
+        case 0:
+          return this.x;
+
+        case 1:
+          return this.y;
+
+        case 2:
+          return this.z;
+
+        default:
+          throw new Error('index is out of range: ' + index);
+      }
+    }
+
+    clone() {
+      return new this.constructor(this.x, this.y, this.z);
+    }
+
+    copy(v) {
+      this.x = v.x;
+      this.y = v.y;
+      this.z = v.z;
+      return this;
+    }
+
+    add(v, w) {
+      if (w !== undefined) {
+        console.warn('THREE.Vector3: .add() now only accepts one argument. Use .addVectors( a, b ) instead.');
+        return this.addVectors(v, w);
+      }
+
+      this.x += v.x;
+      this.y += v.y;
+      this.z += v.z;
+      return this;
+    }
+
+    addScalar(s) {
+      this.x += s;
+      this.y += s;
+      this.z += s;
+      return this;
+    }
+
+    addVectors(a, b) {
+      this.x = a.x + b.x;
+      this.y = a.y + b.y;
+      this.z = a.z + b.z;
+      return this;
+    }
+
+    addScaledVector(v, s) {
+      this.x += v.x * s;
+      this.y += v.y * s;
+      this.z += v.z * s;
+      return this;
+    }
+
+    sub(v, w) {
+      if (w !== undefined) {
+        console.warn('THREE.Vector3: .sub() now only accepts one argument. Use .subVectors( a, b ) instead.');
+        return this.subVectors(v, w);
+      }
+
+      this.x -= v.x;
+      this.y -= v.y;
+      this.z -= v.z;
+      return this;
+    }
+
+    subScalar(s) {
+      this.x -= s;
+      this.y -= s;
+      this.z -= s;
+      return this;
+    }
+
+    subVectors(a, b) {
+      this.x = a.x - b.x;
+      this.y = a.y - b.y;
+      this.z = a.z - b.z;
+      return this;
+    }
+
+    multiply(v, w) {
+      if (w !== undefined) {
+        console.warn('THREE.Vector3: .multiply() now only accepts one argument. Use .multiplyVectors( a, b ) instead.');
+        return this.multiplyVectors(v, w);
+      }
+
+      this.x *= v.x;
+      this.y *= v.y;
+      this.z *= v.z;
+      return this;
+    }
+
+    multiplyScalar(scalar) {
+      this.x *= scalar;
+      this.y *= scalar;
+      this.z *= scalar;
+      return this;
+    }
+
+    multiplyVectors(a, b) {
+      this.x = a.x * b.x;
+      this.y = a.y * b.y;
+      this.z = a.z * b.z;
+      return this;
+    }
+
+    applyEuler(euler) {
+      if (!(euler && euler.isEuler)) {
+        console.error('THREE.Vector3: .applyEuler() now expects an Euler rotation rather than a Vector3 and order.');
+      }
+
+      return this.applyQuaternion(_quaternion.setFromEuler(euler));
+    }
+
+    applyAxisAngle(axis, angle) {
+      return this.applyQuaternion(_quaternion.setFromAxisAngle(axis, angle));
+    }
+
+    applyMatrix3(m) {
+      const x = this.x,
+            y = this.y,
+            z = this.z;
+      const e = m.elements;
+      this.x = e[0] * x + e[3] * y + e[6] * z;
+      this.y = e[1] * x + e[4] * y + e[7] * z;
+      this.z = e[2] * x + e[5] * y + e[8] * z;
+      return this;
+    }
+
+    applyNormalMatrix(m) {
+      return this.applyMatrix3(m).normalize();
+    }
+
+    applyMatrix4(m) {
+      const x = this.x,
+            y = this.y,
+            z = this.z;
+      const e = m.elements;
+      const w = 1 / (e[3] * x + e[7] * y + e[11] * z + e[15]);
+      this.x = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w;
+      this.y = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w;
+      this.z = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w;
+      return this;
+    }
+
+    applyQuaternion(q) {
+      const x = this.x,
+            y = this.y,
+            z = this.z;
+      const qx = q.x,
+            qy = q.y,
+            qz = q.z,
+            qw = q.w; // calculate quat * vector
+
+      const ix = qw * x + qy * z - qz * y;
+      const iy = qw * y + qz * x - qx * z;
+      const iz = qw * z + qx * y - qy * x;
+      const iw = -qx * x - qy * y - qz * z; // calculate result * inverse quat
+
+      this.x = ix * qw + iw * -qx + iy * -qz - iz * -qy;
+      this.y = iy * qw + iw * -qy + iz * -qx - ix * -qz;
+      this.z = iz * qw + iw * -qz + ix * -qy - iy * -qx;
+      return this;
+    }
+
+    project(camera) {
+      return this.applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix);
+    }
+
+    unproject(camera) {
+      return this.applyMatrix4(camera.projectionMatrixInverse).applyMatrix4(camera.matrixWorld);
+    }
+
+    transformDirection(m) {
+      // input: THREE.Matrix4 affine matrix
+      // vector interpreted as a direction
+      const x = this.x,
+            y = this.y,
+            z = this.z;
+      const e = m.elements;
+      this.x = e[0] * x + e[4] * y + e[8] * z;
+      this.y = e[1] * x + e[5] * y + e[9] * z;
+      this.z = e[2] * x + e[6] * y + e[10] * z;
+      return this.normalize();
+    }
+
+    divide(v) {
+      this.x /= v.x;
+      this.y /= v.y;
+      this.z /= v.z;
+      return this;
+    }
+
+    divideScalar(scalar) {
+      return this.multiplyScalar(1 / scalar);
+    }
+
+    min(v) {
+      this.x = Math.min(this.x, v.x);
+      this.y = Math.min(this.y, v.y);
+      this.z = Math.min(this.z, v.z);
+      return this;
+    }
+
+    max(v) {
+      this.x = Math.max(this.x, v.x);
+      this.y = Math.max(this.y, v.y);
+      this.z = Math.max(this.z, v.z);
+      return this;
+    }
+
+    clamp(min, max) {
+      // assumes min < max, componentwise
+      this.x = Math.max(min.x, Math.min(max.x, this.x));
+      this.y = Math.max(min.y, Math.min(max.y, this.y));
+      this.z = Math.max(min.z, Math.min(max.z, this.z));
+      return this;
+    }
+
+    clampScalar(minVal, maxVal) {
+      this.x = Math.max(minVal, Math.min(maxVal, this.x));
+      this.y = Math.max(minVal, Math.min(maxVal, this.y));
+      this.z = Math.max(minVal, Math.min(maxVal, this.z));
+      return this;
+    }
+
+    clampLength(min, max) {
+      const length = this.length();
+      return this.divideScalar(length || 1).multiplyScalar(Math.max(min, Math.min(max, length)));
+    }
+
+    floor() {
+      this.x = Math.floor(this.x);
+      this.y = Math.floor(this.y);
+      this.z = Math.floor(this.z);
+      return this;
+    }
+
+    ceil() {
+      this.x = Math.ceil(this.x);
+      this.y = Math.ceil(this.y);
+      this.z = Math.ceil(this.z);
+      return this;
+    }
+
+    round() {
+      this.x = Math.round(this.x);
+      this.y = Math.round(this.y);
+      this.z = Math.round(this.z);
+      return this;
+    }
+
+    roundToZero() {
+      this.x = this.x < 0 ? Math.ceil(this.x) : Math.floor(this.x);
+      this.y = this.y < 0 ? Math.ceil(this.y) : Math.floor(this.y);
+      this.z = this.z < 0 ? Math.ceil(this.z) : Math.floor(this.z);
+      return this;
+    }
+
+    negate() {
+      this.x = -this.x;
+      this.y = -this.y;
+      this.z = -this.z;
+      return this;
+    }
+
+    dot(v) {
+      return this.x * v.x + this.y * v.y + this.z * v.z;
+    } // TODO lengthSquared?
+
+
+    lengthSq() {
+      return this.x * this.x + this.y * this.y + this.z * this.z;
+    }
+
+    length() {
+      return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
+    }
+
+    manhattanLength() {
+      return Math.abs(this.x) + Math.abs(this.y) + Math.abs(this.z);
+    }
+
+    normalize() {
+      return this.divideScalar(this.length() || 1);
+    }
+
+    setLength(length) {
+      return this.normalize().multiplyScalar(length);
+    }
+
+    lerp(v, alpha) {
+      this.x += (v.x - this.x) * alpha;
+      this.y += (v.y - this.y) * alpha;
+      this.z += (v.z - this.z) * alpha;
+      return this;
+    }
+
+    lerpVectors(v1, v2, alpha) {
+      this.x = v1.x + (v2.x - v1.x) * alpha;
+      this.y = v1.y + (v2.y - v1.y) * alpha;
+      this.z = v1.z + (v2.z - v1.z) * alpha;
+      return this;
+    }
+
+    cross(v, w) {
+      if (w !== undefined) {
+        console.warn('THREE.Vector3: .cross() now only accepts one argument. Use .crossVectors( a, b ) instead.');
+        return this.crossVectors(v, w);
+      }
+
+      return this.crossVectors(this, v);
+    }
+
+    crossVectors(a, b) {
+      const ax = a.x,
+            ay = a.y,
+            az = a.z;
+      const bx = b.x,
+            by = b.y,
+            bz = b.z;
+      this.x = ay * bz - az * by;
+      this.y = az * bx - ax * bz;
+      this.z = ax * by - ay * bx;
+      return this;
+    }
+
+    projectOnVector(v) {
+      const denominator = v.lengthSq();
+      if (denominator === 0) return this.set(0, 0, 0);
+      const scalar = v.dot(this) / denominator;
+      return this.copy(v).multiplyScalar(scalar);
+    }
+
+    projectOnPlane(planeNormal) {
+      _vector.copy(this).projectOnVector(planeNormal);
+
+      return this.sub(_vector);
+    }
+
+    reflect(normal) {
+      // reflect incident vector off plane orthogonal to normal
+      // normal is assumed to have unit length
+      return this.sub(_vector.copy(normal).multiplyScalar(2 * this.dot(normal)));
+    }
+
+    angleTo(v) {
+      const denominator = Math.sqrt(this.lengthSq() * v.lengthSq());
+      if (denominator === 0) return Math.PI / 2;
+      const theta = this.dot(v) / denominator; // clamp, to handle numerical problems
+
+      return Math.acos(MathUtils.clamp(theta, -1, 1));
+    }
+
+    distanceTo(v) {
+      return Math.sqrt(this.distanceToSquared(v));
+    }
+
+    distanceToSquared(v) {
+      const dx = this.x - v.x,
+            dy = this.y - v.y,
+            dz = this.z - v.z;
+      return dx * dx + dy * dy + dz * dz;
+    }
+
+    manhattanDistanceTo(v) {
+      return Math.abs(this.x - v.x) + Math.abs(this.y - v.y) + Math.abs(this.z - v.z);
+    }
+
+    setFromSpherical(s) {
+      return this.setFromSphericalCoords(s.radius, s.phi, s.theta);
+    }
+
+    setFromSphericalCoords(radius, phi, theta) {
+      const sinPhiRadius = Math.sin(phi) * radius;
+      this.x = sinPhiRadius * Math.sin(theta);
+      this.y = Math.cos(phi) * radius;
+      this.z = sinPhiRadius * Math.cos(theta);
+      return this;
+    }
+
+    setFromCylindrical(c) {
+      return this.setFromCylindricalCoords(c.radius, c.theta, c.y);
+    }
+
+    setFromCylindricalCoords(radius, theta, y) {
+      this.x = radius * Math.sin(theta);
+      this.y = y;
+      this.z = radius * Math.cos(theta);
+      return this;
+    }
+
+    setFromMatrixPosition(m) {
+      const e = m.elements;
+      this.x = e[12];
+      this.y = e[13];
+      this.z = e[14];
+      return this;
+    }
+
+    setFromMatrixScale(m) {
+      const sx = this.setFromMatrixColumn(m, 0).length();
+      const sy = this.setFromMatrixColumn(m, 1).length();
+      const sz = this.setFromMatrixColumn(m, 2).length();
+      this.x = sx;
+      this.y = sy;
+      this.z = sz;
+      return this;
+    }
+
+    setFromMatrixColumn(m, index) {
+      return this.fromArray(m.elements, index * 4);
+    }
+
+    setFromMatrix3Column(m, index) {
+      return this.fromArray(m.elements, index * 3);
+    }
+
+    equals(v) {
+      return v.x === this.x && v.y === this.y && v.z === this.z;
+    }
+
+    fromArray(array, offset = 0) {
+      this.x = array[offset];
+      this.y = array[offset + 1];
+      this.z = array[offset + 2];
+      return this;
+    }
+
+    toArray(array = [], offset = 0) {
+      array[offset] = this.x;
+      array[offset + 1] = this.y;
+      array[offset + 2] = this.z;
+      return array;
+    }
+
+    fromBufferAttribute(attribute, index, offset) {
+      if (offset !== undefined) {
+        console.warn('THREE.Vector3: offset has been removed from .fromBufferAttribute().');
+      }
+
+      this.x = attribute.getX(index);
+      this.y = attribute.getY(index);
+      this.z = attribute.getZ(index);
+      return this;
+    }
+
+    random() {
+      this.x = Math.random();
+      this.y = Math.random();
+      this.z = Math.random();
+      return this;
+    }
+
+  }
+
+  Vector3.prototype.isVector3 = true;
+
+  const _vector =
+  /*@__PURE__*/
+  new Vector3();
+
+  const _quaternion =
+  /*@__PURE__*/
+  new Quaternion();
+
+  const _startP =
+  /*@__PURE__*/
+  new Vector3();
+
+  const _startEnd =
+  /*@__PURE__*/
+  new Vector3();
+
+  class Line3 {
+    constructor(start = new Vector3(), end = new Vector3()) {
+      this.start = start;
+      this.end = end;
+    }
+
+    set(start, end) {
+      this.start.copy(start);
+      this.end.copy(end);
+      return this;
+    }
+
+    copy(line) {
+      this.start.copy(line.start);
+      this.end.copy(line.end);
+      return this;
+    }
+
+    getCenter(target) {
+      if (target === undefined) {
+        console.warn('THREE.Line3: .getCenter() target is now required');
+        target = new Vector3();
+      }
+
+      return target.addVectors(this.start, this.end).multiplyScalar(0.5);
+    }
+
+    delta(target) {
+      if (target === undefined) {
+        console.warn('THREE.Line3: .delta() target is now required');
+        target = new Vector3();
+      }
+
+      return target.subVectors(this.end, this.start);
+    }
+
+    distanceSq() {
+      return this.start.distanceToSquared(this.end);
+    }
+
+    distance() {
+      return this.start.distanceTo(this.end);
+    }
+
+    at(t, target) {
+      if (target === undefined) {
+        console.warn('THREE.Line3: .at() target is now required');
+        target = new Vector3();
+      }
+
+      return this.delta(target).multiplyScalar(t).add(this.start);
+    }
+
+    closestPointToPointParameter(point, clampToLine) {
+      _startP.subVectors(point, this.start);
+
+      _startEnd.subVectors(this.end, this.start);
+
+      const startEnd2 = _startEnd.dot(_startEnd);
+
+      const startEnd_startP = _startEnd.dot(_startP);
+
+      let t = startEnd_startP / startEnd2;
+
+      if (clampToLine) {
+        t = MathUtils.clamp(t, 0, 1);
+      }
+
+      return t;
+    }
+
+    closestPointToPoint(point, clampToLine, target) {
+      const t = this.closestPointToPointParameter(point, clampToLine);
+
+      if (target === undefined) {
+        console.warn('THREE.Line3: .closestPointToPoint() target is now required');
+        target = new Vector3();
+      }
+
+      return this.delta(target).multiplyScalar(t).add(this.start);
+    }
+
+    applyMatrix4(matrix) {
+      this.start.applyMatrix4(matrix);
+      this.end.applyMatrix4(matrix);
+      return this;
+    }
+
+    equals(line) {
+      return line.start.equals(this.start) && line.end.equals(this.end);
+    }
+
+    clone() {
+      return new this.constructor().copy(this);
+    }
+
+  }
 
   class Chunk {
     constructor(x, y) {
@@ -1552,14 +2910,17 @@
       return x + 1 + SubChunk.height * (y + 1);
     }
 
-  } // InfiniteChunkMap wraps the complexity of infinite voxel pages
-  // all methods are in global space
+  }
 
   _defineProperty(SubChunk, "width", 3);
 
   _defineProperty(SubChunk, "height", 3);
 
   _defineProperty(SubChunk, "depth", 3);
+
+  var posB3 = new Vector3(0, 0, 0);
+  var posA3 = new Vector3(0, 0, 0); // InfiniteChunkMap wraps the complexity of infinite voxel pages
+  // all methods are in global space
 
   class InfiniteChunkMap {
     constructor() {
@@ -1843,6 +3204,78 @@
 
       raycast(origin, direction, 1000, check);
       return result;
+    } // calls callback with every x,y,z between origin and destination
+    // modified "destination" in place
+
+
+    line(origin, destination, callback) {
+      sub(destination, destination, origin);
+      let len = length(destination);
+      normalize(destination, destination);
+      raycast(origin, destination, len, callback);
+    }
+
+    flood(x, y, z, test) {
+      if (!test(x, y, z)) return;
+      this.flood(x - 1, y, z, test);
+      this.flood(x + 1, y, z, test);
+      this.flood(x, y - 1, z, test);
+      this.flood(x, y + 1, z, test);
+      this.flood(x, y, z - 1, test);
+      this.flood(x, y, z + 1, test);
+    }
+
+    rasterizeLine(sphere1, sphere2, check) {
+      var line;
+      var self = this;
+      let testPos = new Vector3();
+
+      function replacer(x, y, z) {
+        let curr = self.at(x, y, z);
+        let replace = check(x, y, z, curr);
+        if (replace == curr) return false;
+        self.set(x, y, z, replace);
+        let pos = new Vector3(x + .5, y + .5, z + .5);
+        let d = line.closestPointToPointParameter(pos, true);
+        let r = MathUtils.lerp(sphere1[3], sphere2[3], d);
+        line.at(d, testPos);
+        let dist = pos.distanceTo(testPos);
+        return dist < r;
+      }
+
+      function startFlood(x, y, z) {
+        self.flood(x, y, z, replacer);
+      }
+
+      line = new Line3(posA3.fromArray(sphere1), posB3.fromArray(sphere2));
+      self.line(sphere1, clone$1(sphere2), startFlood);
+    }
+
+    rasterizeCylinder(sphere1, sphere2, check) {
+      var line;
+      var self = this;
+      let testPos = new Vector3();
+
+      function replacer(x, y, z) {
+        let curr = self.at(x, y, z);
+        let replace = check(x, y, z, curr);
+        if (replace == curr) return false;
+        self.set(x, y, z, replace);
+        let pos = new Vector3(x + .5, y + .5, z + .5);
+        let d = line.closestPointToPointParameter(pos, false);
+        if (d < 0 || d > 1) return false;
+        let r = MathUtils.lerp(sphere1[3], sphere2[3], d);
+        line.at(d, testPos);
+        let dist = pos.distanceTo(testPos);
+        return dist < r;
+      }
+
+      function startFlood(x, y, z) {
+        self.flood(x, y, z, replacer);
+      }
+
+      line = new Line3(posA3.fromArray(sphere1), posB3.fromArray(sphere2));
+      self.line(sphere1, clone$1(sphere2), startFlood);
     }
 
   }
@@ -1896,7 +3329,7 @@
     var tDeltaY = stepY / dy;
     var tDeltaZ = stepZ / dz; // Buffer for reporting faces to the callback.
 
-    var face = create$2(); // Avoids an infinite loop.
+    var face; // Avoids an infinite loop.
 
     if (dx === 0 && dy === 0 && dz === 0) throw new RangeError("Raycast in zero direction!"); // Rescale from units of 1 cube-edge to units of 'direction' so we can
     // compare with 't'.
@@ -1919,34 +3352,26 @@
 
           tMaxX += tDeltaX; // Record the normal vector of the cube face we entered.
 
-          face[0] = -stepX;
-          face[1] = 0;
-          face[2] = 0;
+          face = stepX > 0 ? 1 : 3;
         } else {
           if (tMaxZ > radius) break;
           z += stepZ;
           tMaxZ += tDeltaZ;
-          face[0] = 0;
-          face[1] = 0;
-          face[2] = -stepZ;
+          face = stepZ > 0 ? 4 : 5;
         }
       } else {
         if (tMaxY < tMaxZ) {
           if (tMaxY > radius) break;
           y += stepY;
           tMaxY += tDeltaY;
-          face[0] = 0;
-          face[1] = -stepY;
-          face[2] = 0;
+          face = stepY > 0 ? 0 : 1;
         } else {
           // Identical to the second case, repeated for simplicity in
           // the conditionals.
           if (tMaxZ > radius) break;
           z += stepZ;
           tMaxZ += tDeltaZ;
-          face[0] = 0;
-          face[1] = 0;
-          face[2] = -stepZ;
+          face = stepZ > 0 ? 4 : 5;
         }
       }
     }
@@ -2940,156 +4365,12 @@
   });
   var seedRandom_1 = seedRandom.resetGlobal;
 
-  const _lut = [];
-
-  for (let i = 0; i < 256; i++) {
-    _lut[i] = (i < 16 ? '0' : '') + i.toString(16);
-  }
-
-  let _seed = 1234567;
-  const MathUtils = {
-    DEG2RAD: Math.PI / 180,
-    RAD2DEG: 180 / Math.PI,
-    generateUUID: function () {
-      // http://stackoverflow.com/questions/105034/how-to-create-a-guid-uuid-in-javascript/21963136#21963136
-      const d0 = Math.random() * 0xffffffff | 0;
-      const d1 = Math.random() * 0xffffffff | 0;
-      const d2 = Math.random() * 0xffffffff | 0;
-      const d3 = Math.random() * 0xffffffff | 0;
-      const uuid = _lut[d0 & 0xff] + _lut[d0 >> 8 & 0xff] + _lut[d0 >> 16 & 0xff] + _lut[d0 >> 24 & 0xff] + '-' + _lut[d1 & 0xff] + _lut[d1 >> 8 & 0xff] + '-' + _lut[d1 >> 16 & 0x0f | 0x40] + _lut[d1 >> 24 & 0xff] + '-' + _lut[d2 & 0x3f | 0x80] + _lut[d2 >> 8 & 0xff] + '-' + _lut[d2 >> 16 & 0xff] + _lut[d2 >> 24 & 0xff] + _lut[d3 & 0xff] + _lut[d3 >> 8 & 0xff] + _lut[d3 >> 16 & 0xff] + _lut[d3 >> 24 & 0xff]; // .toUpperCase() here flattens concatenated strings to save heap memory space.
-
-      return uuid.toUpperCase();
-    },
-    clamp: function (value, min, max) {
-      return Math.max(min, Math.min(max, value));
-    },
-    // compute euclidian modulo of m % n
-    // https://en.wikipedia.org/wiki/Modulo_operation
-    euclideanModulo: function (n, m) {
-      return (n % m + m) % m;
-    },
-    // Linear mapping from range <a1, a2> to range <b1, b2>
-    mapLinear: function (x, a1, a2, b1, b2) {
-      return b1 + (x - a1) * (b2 - b1) / (a2 - a1);
-    },
-    // https://www.gamedev.net/tutorials/programming/general-and-gameplay-programming/inverse-lerp-a-super-useful-yet-often-overlooked-function-r5230/
-    inverseLerp: function (x, y, value) {
-      if (x !== y) {
-        return (value - x) / (y - x);
-      } else {
-        return 0;
-      }
-    },
-    // https://en.wikipedia.org/wiki/Linear_interpolation
-    lerp: function (x, y, t) {
-      return (1 - t) * x + t * y;
-    },
-    // http://www.rorydriscoll.com/2016/03/07/frame-rate-independent-damping-using-lerp/
-    damp: function (x, y, lambda, dt) {
-      return MathUtils.lerp(x, y, 1 - Math.exp(-lambda * dt));
-    },
-    // https://www.desmos.com/calculator/vcsjnyz7x4
-    pingpong: function (x, length = 1) {
-      return length - Math.abs(MathUtils.euclideanModulo(x, length * 2) - length);
-    },
-    // http://en.wikipedia.org/wiki/Smoothstep
-    smoothstep: function (x, min, max) {
-      if (x <= min) return 0;
-      if (x >= max) return 1;
-      x = (x - min) / (max - min);
-      return x * x * (3 - 2 * x);
-    },
-    smootherstep: function (x, min, max) {
-      if (x <= min) return 0;
-      if (x >= max) return 1;
-      x = (x - min) / (max - min);
-      return x * x * x * (x * (x * 6 - 15) + 10);
-    },
-    // Random integer from <low, high> interval
-    randInt: function (low, high) {
-      return low + Math.floor(Math.random() * (high - low + 1));
-    },
-    // Random float from <low, high> interval
-    randFloat: function (low, high) {
-      return low + Math.random() * (high - low);
-    },
-    // Random float from <-range/2, range/2> interval
-    randFloatSpread: function (range) {
-      return range * (0.5 - Math.random());
-    },
-    // Deterministic pseudo-random float in the interval [ 0, 1 ]
-    seededRandom: function (s) {
-      if (s !== undefined) _seed = s % 2147483647; // Park-Miller algorithm
-
-      _seed = _seed * 16807 % 2147483647;
-      return (_seed - 1) / 2147483646;
-    },
-    degToRad: function (degrees) {
-      return degrees * MathUtils.DEG2RAD;
-    },
-    radToDeg: function (radians) {
-      return radians * MathUtils.RAD2DEG;
-    },
-    isPowerOfTwo: function (value) {
-      return (value & value - 1) === 0 && value !== 0;
-    },
-    ceilPowerOfTwo: function (value) {
-      return Math.pow(2, Math.ceil(Math.log(value) / Math.LN2));
-    },
-    floorPowerOfTwo: function (value) {
-      return Math.pow(2, Math.floor(Math.log(value) / Math.LN2));
-    },
-    setQuaternionFromProperEuler: function (q, a, b, c, order) {
-      // Intrinsic Proper Euler Angles - see https://en.wikipedia.org/wiki/Euler_angles
-      // rotations are applied to the axes in the order specified by 'order'
-      // rotation by angle 'a' is applied first, then by angle 'b', then by angle 'c'
-      // angles are in radians
-      const cos = Math.cos;
-      const sin = Math.sin;
-      const c2 = cos(b / 2);
-      const s2 = sin(b / 2);
-      const c13 = cos((a + c) / 2);
-      const s13 = sin((a + c) / 2);
-      const c1_3 = cos((a - c) / 2);
-      const s1_3 = sin((a - c) / 2);
-      const c3_1 = cos((c - a) / 2);
-      const s3_1 = sin((c - a) / 2);
-
-      switch (order) {
-        case 'XYX':
-          q.set(c2 * s13, s2 * c1_3, s2 * s1_3, c2 * c13);
-          break;
-
-        case 'YZY':
-          q.set(s2 * s1_3, c2 * s13, s2 * c1_3, c2 * c13);
-          break;
-
-        case 'ZXZ':
-          q.set(s2 * c1_3, s2 * s1_3, c2 * s13, c2 * c13);
-          break;
-
-        case 'XZX':
-          q.set(c2 * s13, s2 * s3_1, s2 * c3_1, c2 * c13);
-          break;
-
-        case 'YXY':
-          q.set(s2 * c3_1, c2 * s13, s2 * s3_1, c2 * c13);
-          break;
-
-        case 'ZYZ':
-          q.set(s2 * s3_1, s2 * c3_1, c2 * s13, c2 * c13);
-          break;
-
-        default:
-          console.warn('THREE.MathUtils: .setQuaternionFromProperEuler() encountered an unknown order: ' + order);
-      }
-    }
-  };
-
   const seed = 1018;
   const biomeBlend = 3; // 2, 3, 4
 
   const biomeSmooth = 100; // 1 to Chunk.width*3, performance tuner
+
+  const caveness = [1.5, 4]; // 1.8 to 4.3
 
   const biomes = {
     "mountain": {
@@ -3133,20 +4414,12 @@
     constructor(chunkMap) {
       this.seed =  seed ;
 
-      if (simplex == 0) {
+      {
         var simplex = new OpenSimplexNoise(this.seed);
 
-        this.noise2D = (x, y) => {
-          simplex.noise2D(x, y) / 0.866;
-        };
+        this.noise2D = (x, y) => simplex.noise2D(x, y) / 0.866;
 
         this.noise3D = simplex.noise3D.bind(simplex);
-      } else {
-        var noise = new noisejs.Noise(Math.floor(this.seed % 35565));
-
-        this.noise2D = (x, y) => noise.simplex2(x, y);
-
-        this.noise3D = (x, y, z) => noise.simplex3(x, y, z);
       }
 
       this.chunkMap = chunkMap;
@@ -3181,11 +4454,11 @@
       var rivers = 1 - Math.abs(this.noise2D(chunk.x / (30 / rVal) + 5.5, chunk.y / (30 / rVal)) * 2); // rivers *= (1+this.noise2D(chunk.x / 50 + 5.5, chunk.y / 50))/2
 
       if (rivers > rVal) chunk.biome = "river";
-      chunk.center = fromValues$1((chunk.x + chunk.rng()) * Chunk.width, (chunk.y + chunk.rng()) * Chunk.height);
+      chunk.center = fromValues$2((chunk.x + chunk.rng()) * Chunk.width, (chunk.y + chunk.rng()) * Chunk.height);
       var eh = biomes[chunk.biome].height;
       chunk.roughHeight = this.middle + eh * (eh < 0 ? this.middle - this.lower : this.higher - this.middle);
       var caveRNG = chunk.rng();
-      var radius = caveRNG * caveRNG * 2.5 + 1.8;
+      var radius = caveRNG * caveRNG * (caveness[1] - caveness[0]) + caveness[0];
       chunk.caveBudget = Math.floor(chunk.rng() * 40) + 40;
       chunk.caves = [];
 
@@ -3220,6 +4493,7 @@
       if (chunk.map) return;
       this.chunkMap.neighbors(chunk, 49, this.randomgen.bind(this));
       var start = performance.now();
+      performance.mark("generate");
       if (!chunk.rng) debugger;
       var xBase = chunk.x;
       var yBase = chunk.y;
@@ -3231,7 +4505,7 @@
       var blockMap = new Uint8Array(whd);
       var heightMap = new Uint8Array(wh);
       var totalHeight = 0;
-      var curr = fromValues$1((xBase + .5) * width, (yBase + .5) * height);
+      var curr = fromValues$2((xBase + .5) * width, (yBase + .5) * height);
       var nearest = this.chunkMap.within(curr, biomeSmooth);
       var distinctBiomes = false;
 
@@ -3249,7 +4523,7 @@
           var totalInvDist = 0;
 
           if (distinctBiomes) {
-            curr = fromValues$1(x + xBase * width, y + yBase * height);
+            curr = fromValues$2(x + xBase * width, y + yBase * height);
             var bestBiome;
             var sumInvDist = 0;
 
@@ -3286,10 +4560,11 @@
           var eh = 0;
 
           if (mountainSample > 0) {
-            var mountain = this.noise2D((x + xBase * width) / 140, (y + yBase * height) / 140);
-            mountain += this.noise2D((x + xBase * width) / 70, (y + yBase * height) / 70) * .5;
-            mountain += this.noise2D((x + xBase * width) / 35, (y + yBase * height) / 35) * .25;
-            mountain /= 1.75;
+            var mountain = this.noise2D((x + xBase * width) / 160, (y + yBase * height) / 160);
+            mountain += this.noise2D((x + xBase * width) / 80, (y + yBase * height) / 80) * .5;
+            mountain += this.noise2D((x + xBase * width) / 40, (y + yBase * height) / 40) * .25;
+            mountain += this.noise2D((x + xBase * width) / 20, (y + yBase * height) / 20) * .125;
+            mountain /= 1.875;
 
             var _mountain = Math.sign(mountain) * Math.pow(mountain < 0 ? -mountain : mountain, 1.1);
 
@@ -3417,7 +4692,7 @@
           var id = Chunk.index2d(x, y);
           if (structures[id]) continue;
           structures[id] = 1;
-          chunk.structures.push(["tree", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
+          chunk.structures.push(["pine", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
         }
 
         for (var i = 0; i < 10; i++) {
@@ -3450,7 +4725,7 @@
             chunk.structures.push(["plant", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
           }
         } else {
-          for (var i = 0; i < 15; i++) {
+          for (var i = 0; i < 12; i++) {
             var x = Math.floor(chunk.rng() * width),
                 y = Math.floor(chunk.rng() * height);
             var id = Chunk.index2d(x, y);
@@ -3471,13 +4746,22 @@
       }
 
       if (chunk.biome == "desert") {
-        for (var i = 0; i < 15; i++) {
+        for (var i = 0; i < 8; i++) {
           var x = Math.floor(chunk.rng() * width),
               y = Math.floor(chunk.rng() * height);
           var id = Chunk.index2d(x, y);
           if (structures[id]) continue;
           structures[id] = 1;
           chunk.structures.push(["twig", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
+        }
+
+        for (i = 0; i < (chunk.rng() < .01) ? 1 : 0; i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["monolith", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] - 1]);
         }
       }
 
@@ -3556,8 +4840,8 @@
         chunk.structures.push(["cave", allCavePairs[i]]); // LIFO, caves should be first
       }
 
-      chunk.rng = false;
       var time = performance.now() - start;
+      performance.measure("Generating Chunk", "generate");
       this.benchmarks.generation = (this.benchmarks.generation + time) / 2;
       return chunk;
     }
@@ -3566,6 +4850,7 @@
       if (chunk.populated) return;
       this.chunkMap.neighbors(chunk, 25, this.generate.bind(this));
       var start = performance.now();
+      performance.mark("populate");
       var item;
 
       while (item = chunk.structures.pop()) {
@@ -3586,15 +4871,31 @@
             z: oz,
             radius: oradius
           } = caveB;
-          var pos = create$3();
-          var steps = dist([x, y, z], [ox, oy, oz]) / (Math.max(radius, oradius) / 2);
+          var starting = fromValues$1(x, y, z, radius);
+          var ending = fromValues$1(ox, oy, oz, oradius);
+          var posA = clone$2(starting);
+          var posB = clone$2(starting);
+          let resolution = 9; // rasterize a spline in parts
 
-          for (var f = 0; f < 1; f += 1 / steps) {
-            lerp$1(pos, [x, y, z, radius], [ox, oy, oz, oradius], f);
-            var [dx, dy, dz, dr] = pos;
-            dz = MathUtils.lerp(z, oz, MathUtils.smootherstep(f, 0, 1));
-            this.setCircleIf(dx, dy, dz, dr, 0, HillyGenerator.caveBlocks);
+          for (var f = 0; f < 1; f += 1 / resolution) {
+            lerp$1(posB, starting, ending, f + 1 / resolution);
+            posB[2] = MathUtils.lerp(z, oz, MathUtils.smootherstep(f + 1 / resolution, 0, 1));
+            this.chunkMap.rasterizeLine(posA, posB, (x, y, z, curr) => HillyGenerator.caveBlocks[curr] ? 0 : curr);
+            copy$2(posA, posB);
           }
+        }
+
+        if (item[0] == "monolith") {
+          let [, x, y, z] = item;
+          x += .5;
+          y += .5;
+          let height = chunk.rng() * 4 + 4;
+
+          for (let i = 0; i < 4; i++) this.chunkMap.rasterizeCylinder([x, y, z + i * height, 7 - i], [x, y, z + (i + 1) * height, 7 - i], (x, y, z, curr) => curr == 0 ? 18 : curr);
+
+          for (let i = 0; i < 4; i++) this.chunkMap.rasterizeCylinder([x, y, z + i * height, 5 - i], [x, y, z + (i + 1) * height, 5 - i], (x, y, z, curr) => curr == 18 ? 0 : curr);
+
+          this.chunkMap.rasterizeLine([x, y, z + 4, .1], [x, y, z + 4.1, 0], (x, y, z, curr) => curr == 0 ? 19 : curr);
         }
 
         if (item[0] == "stone_vein") {
@@ -3612,7 +4913,14 @@
           var [, x, y, z] = item;
           var under = this.chunkMap.at(x, y, z - 1);
           if (under != 2) continue;
-          this.growTree(x, y, z);
+          this.growTree(x, y, z, chunk);
+        }
+
+        if (item[0] == "pine") {
+          var [, x, y, z] = item;
+          var under = this.chunkMap.at(x, y, z - 1);
+          if (under != 2) continue;
+          this.growPine(x, y, z, chunk);
         }
 
         if (item[0] == "plant") {
@@ -3638,8 +4946,10 @@
       }
 
       chunk.populated = true;
+      chunk.rng = false;
       var time = performance.now() - start;
       this.benchmarks.population = (this.benchmarks.population + time) / 2;
+      performance.measure("Populating Chunk", "populate");
     }
 
     setCircleIf(x, y, z, radius, dest, iff) {
@@ -3650,23 +4960,46 @@
       }
     }
 
-    growTree(x, y, z) {
-      var baseSize = Math.floor(6 + this.noise2D(x / 100, y / 100) * 5);
-      var treeSize = Math.floor(6 + this.noise2D(x / 150, y / 150) * 5);
+    growPine(x, y, z, chunk) {
+      let leaves = chunk.rng() > .05;
+      let height = chunk.rng() * 2 + 4;
+      let base = [x + chunk.rng(), y + chunk.rng(), z, 0];
+      let baseEnd = [x + .5, y + .5, z + height, 0];
+      let leafStart = [x + .5, y + .5, z + 3, 1.7];
+      let leafEnd = [x + .5, y + .5, z + height + 4, .3];
+      if (leaves) this.chunkMap.rasterizeCylinder(leafStart, leafEnd, (x, y, z, curr) => curr == 0 ? 4 : curr);
+      this.chunkMap.rasterizeLine(base, baseEnd, (x, y, z, curr) => curr == 0 || curr == 4 ? 3 : curr);
+    }
 
-      for (var i = 0; i < baseSize; i++) {
-        this.chunkMap.set(x, y, z + i, 3);
-      }
+    growTree(x, y, z, chunk) {
+      let leaves = chunk.rng() > .05;
+      let hrng = chunk.rng();
+      let height = hrng * hrng * 2 + 3;
+      let base = height / 10;
+      if (height > 4.2) height *= 3.2;
+      let top = [x + .5 + (chunk.rng() - .5) * height / 4, y + .5 + (chunk.rng() - .5) * height / 4, z + height, .4];
+      this.chunkMap.rasterizeLine([x + .5, y + .5, z, base], top, (x, y, z, curr) => curr == 0 || curr == 4 ? 3 : curr);
+      let d = chunk.rng() * Math.PI;
 
-      for (var i = -1; i < treeSize + 1; i++) {
-        var radius = baseSize / 2 * (1 - Math.abs(i / treeSize));
-        var scanArea = Math.ceil(radius);
+      for (let i = 0; i < 3; i++) {
+        let len = chunk.rng() * 2 + height / 2;
 
-        for (var xLeaf = x - scanArea; xLeaf <= x + scanArea; xLeaf++) {
-          for (var yLeaf = y - scanArea; yLeaf <= y + scanArea; yLeaf++) {
-            this.chunkMap.setIf(xLeaf, yLeaf, z + baseSize + i, 4);
-          }
-        }
+        let _x = x + .5 + Math.sin(d + i * Math.PI * 2 / 3) * len;
+
+        let _y = y + .5 + Math.cos(d + i * Math.PI * 2 / 3) * len;
+
+        let _z = z + height + 2 + 1 * chunk.rng();
+
+        let _r = chunk.rng() + 1; // branches.push([_x,_y,_z,0])
+
+
+        let tip = [_x, _y, _z, 0];
+        this.chunkMap.rasterizeLine(tip, top, (x, y, z, curr) => curr == 0 || curr == 4 ? 3 : curr); // draw balls of leaves
+
+        tip[3] = 1;
+        tip[2] -= 1;
+        let tipTop = [(_x + x) / 2, (_y + y) / 2, _z + 1, _r];
+        if (leaves) this.chunkMap.rasterizeLine(tip, tipTop, (x, y, z, curr) => curr == 0 ? 4 : curr);
       }
     }
 
@@ -3678,7 +5011,11 @@
     6: true,
     10: true,
     11: true,
-    12: true
+    12: true,
+    14: true,
+    15: true,
+    16: true,
+    17: true
   });
 
   _defineProperty(HillyGenerator, "veinBlocks", {
@@ -4068,8 +5405,6 @@
     }
 
   }
-  var maxIndex = 0;
-  var maxSize = 0;
 
   class MeshBuilder {
     constructor(size, attrs) {
@@ -4100,18 +5435,6 @@
     combine() {
       if (this.index > this.elements.length) {
         throw new Error("not allowed: more than " + this.elements.length + ` elements`);
-      }
-
-      if (this.index > maxIndex) {
-        maxIndex = this.index; // if (maxIndex==39744) debugger
-
-        console.log("new max index", maxIndex);
-      }
-
-      if (this.elementIndex > maxSize) {
-        maxSize = this.elementIndex; // if (maxSize==21756) debugger
-
-        console.log("new max element", maxSize);
       }
 
       var elements = Uint32Array.from(this.elements.subarray(0, this.elementIndex));
@@ -4495,10 +5818,11 @@
     }
 
     tesselate(chunk) {
+      performance.mark("mesh");
+      performance.mark("scan");
       var w = Chunk.width,
           h = Chunk.height;
-      var pos = 0,
-          wh = w * h;
+      var wh = w * h;
       this.bounds = {
         x: [w, 0],
         y: [h, 0],
@@ -4507,9 +5831,14 @@
       this.trackBounds = true;
 
       for (var _x = 0; _x < wh; _x++) {
-        pos = (pos + 1687194493) % wh;
-        var x = pos % w,
-            y = Math.floor(pos / w);
+        let x, y;
+
+        {
+          // these can be used if the chunk is 16x16
+          x = _x & 15;
+          y = _x >> 4 & 15;
+        }
+
         let column = chunk.heights[PaddedChunk.index2d(x, y)] + 1;
 
         for (let z = column; z >= 0; z--) {
@@ -4517,8 +5846,11 @@
         }
       }
 
+      performance.measure("Scanning Chunk", "scan");
+      let mesh = this.finish(chunk.x, chunk.y);
+      performance.measure("Meshing Chunk", "mesh");
       return {
-        "mesh": this.finish(chunk.x, chunk.y),
+        "mesh": mesh,
         "bounds": this.bounds
       };
     }
@@ -5658,12 +6990,8 @@
     start() {
       window.setInterval(() => this.events.emit("step"), 25);
       var overlay = document.createElement("div");
-      overlay.style = "position:absolute;top:0;left:0;width:100%;font-family:monospace;";
+      overlay.style = "position:absolute;bottom:0;left:0;width:100%;font-family:monospace;";
       this.overlay = overlay;
-      var debugElement = document.createElement("div");
-      debugElement.style = "background:rgba(200,200,200,.5);outline:1px solid black;width:100%;";
-      this.debugElement = debugElement;
-      overlay.appendChild(debugElement);
       var optionsElement = document.createElement("div");
       this.optionsElement = optionsElement;
       overlay.appendChild(optionsElement);
@@ -5681,6 +7009,10 @@
       qualityElement.value = 2;
       this.qualityElement = qualityElement;
       optionsElement.appendChild(qualityElement);
+      var debugElement = document.createElement("div");
+      debugElement.style = "background:rgba(200,200,200,.5);outline:1px solid black;width:100%;";
+      this.debugElement = debugElement;
+      overlay.appendChild(debugElement);
       var renderDistanceElement = document.createElement("input");
       renderDistanceElement.type = "range";
       renderDistanceElement.value = 7;
@@ -6145,25 +7477,25 @@
       var alreadyColliding = this.colliding();
 
       if (this.inputs.input[bindings.forward]) {
-        var impulse = fromValues$1(power, 0);
+        var impulse = fromValues$2(power, 0);
         rotate(impulse, impulse, [0, 0], this.yaw * Math.PI / 180);
         add(this.speed, this.speed, [impulse[0], impulse[1], 0]);
       }
 
       if (this.inputs.input[bindings.backward]) {
-        var impulse = fromValues$1(-power, 0);
+        var impulse = fromValues$2(-power, 0);
         rotate(impulse, impulse, [0, 0], this.yaw * Math.PI / 180);
         add(this.speed, this.speed, [impulse[0], impulse[1], 0]); // alreadyColliding = true
       }
 
       if (this.inputs.input[bindings.left]) {
-        var impulse = fromValues$1(0, power);
+        var impulse = fromValues$2(0, power);
         rotate(impulse, impulse, [0, 0], this.yaw * Math.PI / 180);
         add(this.speed, this.speed, [impulse[0], impulse[1], 0]);
       }
 
       if (this.inputs.input[bindings.right]) {
-        var impulse = fromValues$1(0, -power);
+        var impulse = fromValues$2(0, -power);
         rotate(impulse, impulse, [0, 0], this.yaw * Math.PI / 180);
         add(this.speed, this.speed, [impulse[0], impulse[1], 0]);
       }
@@ -6174,7 +7506,7 @@
           y,
           z
         } = this.targetVoxel;
-        this.chunkMap.set(x, y, z, 17);
+        this.chunkMap.set(x, y, z, 17); // this.position[0] += 1000000
       }
 
       if (this.onground) this.jetpack = false;
