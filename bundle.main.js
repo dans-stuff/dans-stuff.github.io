@@ -1461,6 +1461,13 @@
     atlas: [64, 64, 64, 64, 64, 64],
     culls: 3,
     illumination: 0
+  }, {
+    // 20
+    name: "snow_grass",
+    color: [0.376, 0.501, 0.219],
+    atlas: [68, 68, 68, 68, 66, 2],
+    culls: 3,
+    illumination: 0
   }];
 
   const _lut = [];
@@ -4386,46 +4393,44 @@
   var seedRandom_1 = seedRandom.resetGlobal;
 
   const seed = 1018;
-
   const biomeSmooth = 100; // 1 to Chunk.width*3, performance tuner
 
   const caveness = [1.5, 4]; // 1.8 to 4.3
   const biomes = {
     "mountain": {
-      "weight": 1,
       "height": +.5,
       "caves": 2,
       river: .85
     },
     "plains": {
-      "weight": 2,
       "height": +.09,
       "caves": 1,
       river: .88
     },
     "desert": {
-      "weight": 1,
       "height": +.04,
       "caves": 1,
       river: .8
     },
     "forest": {
-      "weight": 2,
       "height": +.03,
       "caves": 1,
       river: .8
     },
     "ocean": {
-      "weight": 1,
       "height": -.5,
       "caves": 1,
       river: 1
     },
     "river": {
-      "weight": 2,
       "height": -.2,
       "caves": 1,
       river: .8
+    },
+    "tundra": {
+      "height": .15,
+      "caves": 1,
+      river: .9
     }
   };
   class HillyGenerator {
@@ -4494,17 +4499,18 @@
     }
 
     calculateBiome(chunk) {
-      // return "desert"
+      // return "tundra"
       var roughness = (this.noise2D(chunk.x / 10 + .5, chunk.y / 10) * 2 + this.noise2D(chunk.x / 20 + .5, chunk.y / 20)) / 3;
-      var moisture = (this.noise2D(chunk.x / 8 + .5, chunk.y / 8) * 2 + this.noise2D(chunk.x / 16 + .5, chunk.y / 16)) / 3; // return ["ocean","mountain","desert","plains","forest"][Math.floor(chunk.rng()*5)]
+      var moisture = (this.noise2D((chunk.x + 1000) / 25 + .5, chunk.y / 25) * 2 + this.noise2D(chunk.x / 50 + .5, chunk.y / 50)) / 3; // return ["ocean","mountain","desert","plains","forest"][Math.floor(chunk.rng()*5)]
       // return "plains"
       // return roughness>0?"ocean":"forest"
 
       if (roughness > .3) return "mountain";
       if (roughness < -.3) return "ocean";
-      if (moisture < -.3) return "desert";
-      if (moisture > .3) return "forest";
-      return "plains";
+      if (moisture < -.4) return "desert";
+      if (moisture < 0) return "plains";
+      if (moisture < .4) return "forest";
+      return "tundra";
     }
 
     generate(chunk) {
@@ -4554,9 +4560,8 @@
                 continue;
               }
 
-              samples[checkChunk.biome] = 0; // checkChunk.invDist = (checkChunk.dist ? 1 / Math.pow(checkChunk.dist, biomeBlend) : 1) * biomes[checkChunk.biome].weight
-
-              checkChunk.invDist = 1 - checkChunk.dist / 23;
+              samples[checkChunk.biome] = 0;
+              checkChunk.invDist = Math.pow(1 - checkChunk.dist / 23, 3);
               sumInvDist += checkChunk.invDist;
             }
 
@@ -4589,6 +4594,7 @@
           var plainsSample = samples["plains"] / totalInvDist;
           var oceanSample = samples["ocean"] / totalInvDist;
           var riverSample = samples["river"] / totalInvDist;
+          var tundraSample = samples["tundra"] / totalInvDist;
           var eh = 0;
 
           if (mountainSample > 0) {
@@ -4613,6 +4619,17 @@
 
             _plains = _plains * .1 + biomes["plains"].height;
             eh += _plains * plainsSample;
+          }
+
+          if (tundraSample > 0) {
+            var plains = this.noise2D((x + xBase * width) / 70, (y + yBase * height) / 70);
+            plains += this.noise2D((x + xBase * width) / 35, (y + yBase * height) / 35) * .5;
+            plains /= 1.5;
+
+            var _plains = Math.sign(plains) * Math.pow(plains < 0 ? -plains : plains, 1.5);
+
+            _plains = _plains * .1 + biomes["tundra"].height;
+            eh += _plains * tundraSample;
           }
 
           if (desertSample > 0) {
@@ -4677,6 +4694,8 @@
 
           if (bestBiome == "ocean") palette = [12, 10, 1, 10]; // marsh, sand, stone... sand shores
 
+          if (bestBiome == "tundra") palette = [20, 10, 1, 10]; // marsh, sand, stone... sand shores
+
           for (var z = 0; z < depth; z++) {
             if (z >= heightHere) {
               if (z < depth * this.sealevel) {
@@ -4695,6 +4714,8 @@
 
               if (z > this.higher - 30 + 10 * snowModifier) {
                 blockMap[Chunk.index3d(x, y, z)] = 5;
+              } else if (z > this.higher - 50 + 20 * snowModifier) {
+                blockMap[Chunk.index3d(x, y, z)] = 1;
               } else if (z < heightHere - 3) {
                 blockMap[Chunk.index3d(x, y, z)] = palette[2];
               } else if (z < heightHere - 1) {
@@ -4774,6 +4795,28 @@
           if (structures[id]) continue;
           structures[id] = 1;
           chunk.structures.push(["tree", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
+        }
+      }
+
+      if (chunk.biome == "tundra") {
+        for (var i = 0; i < 5; i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["twig", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
+        }
+
+        let rng = chunk.rng() < .1;
+
+        for (i = 0; i < (rng ? 7 : 0); i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["pine", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
         }
       }
 
@@ -4951,7 +4994,7 @@
         if (item[0] == "pine") {
           var [, x, y, z] = item;
           var under = this.chunkMap.at(x, y, z - 1);
-          if (under != 2) continue;
+          if (under != 2 && under != 20) continue;
           this.growPine(x, y, z, chunk);
         }
 
@@ -4972,7 +5015,7 @@
         if (item[0] == "twig") {
           var [, x, y, z] = item;
           var under = this.chunkMap.at(x, y, z - 1);
-          if (under != 10) continue;
+          if (under != 10 && under != 20) continue;
           this.chunkMap.set(x, y, z, 13);
         }
       }
@@ -5410,9 +5453,20 @@
   }
 
   const textureFilename = "rpg.png";
-  const atlasOverride = 0; // optimizations
+  const atlasOverride = 0; // normalize blocks
 
-  const greedy = true;
+  const block_type = [],
+        block_culls = [];
+
+  for (let i = 0; i < blocks.length; i++) {
+    let block = blocks[i];
+    block.type = block.type || 0;
+    block.culls = block.culls || 0;
+    block_type[i] = block.type;
+    block_culls[i] = block.culls;
+  } // optimizations
+
+  const config_render_highlight = true;
   class ChunkMesh {
     constructor(x, y, regular, unculled, transparent) {
       this.x = x;
@@ -5761,6 +5815,48 @@
     offsetZ: -1,
     neighbors: [[0, -1, -1], [1, -1, -1], [1, 0, -1], [1, 1, -1], [0, 1, -1], [-1, 1, -1], [-1, 0, -1], [-1, -1, -1]]
   }];
+
+  function face_occludes(face, check, targetID) {
+    if (check === 0) return 0;
+    let culls = block_culls[check];
+    if (culls === 3) return 1;
+
+    if (culls === 2) {
+      if (block_type[check] == 0) {
+        return targetID === check ? 2 : 0;
+      }
+
+      return 0;
+    }
+
+    if (culls === 1) return targetID === check ? 1 : 0;
+    return 0;
+  } // do some preprocessing
+
+
+  for (let face = 0; face < faces.length; face++) {
+    let {
+      offsetX,
+      offsetY,
+      offsetZ
+    } = faces[face];
+    let block_occludes_cache = [];
+
+    for (let block = 0; block < blocks.length; block++) {
+      let other_occludes_cache = [];
+
+      for (let other = 0; other < blocks.length; other++) {
+        let occ = face_occludes(face, other, block);
+        if (occ === 2) occ = offsetX < 0 || offsetY < 0 || offsetZ < 0 ? 1 : 2;
+        other_occludes_cache[other] = occ;
+      }
+
+      block_occludes_cache[block] = other_occludes_cache;
+    }
+
+    faces[face].occlusion_cache = block_occludes_cache;
+  }
+
   class BrilliantSurfaceExtractor {
     constructor(w, h, d) {
       this.method = "random";
@@ -5811,23 +5907,6 @@
       this.yEndBuffer.fill(0);
       this.zEndBuffer.fill(0);
       this.faces = [[], [], [], [], [], []];
-    }
-
-    occludes(check, targetID) {
-      if (check === 0) return 0;
-      let block = blocks[check];
-      if (block.culls === 3) return 1;
-
-      if (block.culls === 2) {
-        if (block.type == 0) {
-          return targetID === check ? 2 : 0;
-        }
-
-        return 0;
-      }
-
-      if (block.culls === 1) return targetID === check ? 1 : 0;
-      return 0;
     }
 
     renderCross(chunk, block, target, x, y, z) {
@@ -5892,55 +5971,51 @@
       if (here == 0) return;
       let block = blocks[here]; // contains a cross
 
-      if (block.culls === 2 && block.type == 1) {
-        let target = this.targets[2];
-        this.renderCross(chunk, block, target, x, y, z);
-        return;
-      }
+      switch (block.type) {
+        case 1:
+          let target = this.targets[2];
+          this.renderCross(chunk, block, target, x, y, z);
+          break;
 
-      let occlusions;
+        case 0:
+          let face_hidden;
+          let occ;
 
-      for (let face = 0; face < 6; face++) {
-        let {
-          offsetX,
-          offsetY,
-          offsetZ
-        } = faces[face];
-        let other = chunk.at(x + offsetX, y + offsetY, z + offsetZ);
-        let occ = this.occludes(other, here);
-
-        if (occ === 2) {
-          if (this.fancy == 1) {
-            occ = offsetX < 0 || offsetY < 0 || offsetZ < 0 ? 0 : 1;
-          } else {
-            occ = true;
+          for (let face = 0; face < 6; face++) {
+            let {
+              offsetX,
+              offsetY,
+              offsetZ,
+              occlusion_cache
+            } = faces[face];
+            let other = chunk.at(x + offsetX, y + offsetY, z + offsetZ);
+            occ = occlusion_cache[here][other];
+            if (occ === 2 && this.fancy) occ = 0;
+            if (occ !== 0) continue;
+            if (!face_hidden) face_hidden = [true, true, true, true, true, true];
+            face_hidden[face] = false;
           }
-        }
 
-        if (occ !== 0) {
-          continue;
-        }
+          if (!face_hidden) return; // for when none of them were exposed
 
-        if (!occlusions) occlusions = [true, true, true, true, true, true];
-        occlusions[face] = false;
-      }
+          let targetID = 0;
+          if (block.culls == 1) targetID = 1;
+          if (block.culls == 2) targetID = 2; // if (!this.fancy) targetID = 0
 
-      if (!occlusions) return;
-      let targetID = 0;
-      if (block.culls == 1) targetID = 1;
-      if (block.culls == 2) targetID = 2;
-      if (!this.fancy) targetID = 0;
-      let index = Chunk.index3d(x, y, z);
+          let index = Chunk.index3d(x, y, z);
 
-      for (let face = 0; face < 6; face++) {
-        if (occlusions[face]) continue;
-        var faceData = this.faceData(chunk, block, x, y, z, face, occlusions);
-        faceData = (faceData << 2) + targetID;
-        this.faceBuffer[face][index] = faceData;
+          for (let face = 0; face < 6; face++) {
+            if (face_hidden[face]) continue;
+            var faceData = this.faceData(chunk, block, x, y, z, face, face_hidden);
+            faceData = (faceData << 2) + targetID;
+            this.faceBuffer[face][index] = faceData;
 
-        {
-          this.faces[face].push([x, y, z]);
-        }
+            {
+              this.faces[face].push([x, y, z]);
+            }
+          }
+
+          break;
       }
 
       if ( this.trackBounds) {
@@ -5951,14 +6026,6 @@
         if (y + 1 > this.bounds.y[1]) this.bounds.y[1] = y + 1;
         if (z + 1 > this.bounds.z[1]) this.bounds.z[1] = z + 1;
       }
-    }
-
-    index3d(x, y, z) {
-      return z + this.depth * (y + this.width * x);
-    }
-
-    index2d(x, y) {
-      return y + this.width * x;
     }
 
     finish(chunkX, chunkY) {
@@ -5989,37 +6056,38 @@
         let self = this;
 
         let addFace = function (x, y, z) {
-          let id = self.index3d(x, y, z);
+          // debugger
+          let id = Chunk.index3d(x, y, z);
           let faceData = faceBuffer[id];
           if (!faceData) return 1;
-          let primary = 1; // expand along primary axis as much as possible
+          faceBuffer[id] = 0;
+          let primary = 1; // quickly expand along primary axis
 
-          while (k + primary < axis1length && greedy) {
-            let id = self.index3d(x + primary * a1x, y + primary * a1y, z + primary * a1z);
+          while (primary < axis1length) {
+            let id = Chunk.index3d(x + primary * a1x, y + primary * a1y, z + primary * a1z);
             let thisFaceData = faceBuffer[id];
             if (thisFaceData != faceData) break;
             faceBuffer[id] = 0;
             primary++;
-          } // then expand along the secondary axis
+          }
 
+          let secondary = 1,
+              expandSecondary = true;
 
-          let secondary = 1;
-
-          while (j + secondary < axis2[3] && greedy) {
-            let ok = true;
-
+          while (expandSecondary && secondary < axis2length) {
+            // then expand along the secondary axis
             for (let _p = 0; _p < primary; _p++) {
-              let id = self.index3d(x + _p * a1x + secondary * a2x, y + _p * a1y + secondary * a2y, z + _p * a1z + secondary * a2z);
+              let id = Chunk.index3d(x + _p * a1x + secondary * a2x, y + _p * a1y + secondary * a2y, z + _p * a1z + secondary * a2z);
               let thisFaceData = faceBuffer[id];
               if (thisFaceData == faceData) continue;
-              ok = false;
+              expandSecondary = false;
               break;
             }
 
-            if (!ok) break;
+            if (!expandSecondary) break;
 
             for (let _p = 0; _p < primary; _p++) {
-              let id = self.index3d(x + _p * a1x + secondary * a2x, y + _p * a1y + secondary * a2y, z + _p * a1z + secondary * a2z);
+              let id = Chunk.index3d(x + _p * a1x + secondary * a2x, y + _p * a1y + secondary * a2y, z + _p * a1z + secondary * a2z);
               faceBuffer[id] = 0;
             }
 
@@ -6036,24 +6104,15 @@
           return primary;
         };
 
-        if (true) {
+        {
           // use the facearray
           for (let i = 0; i < this.faces[face].length; i++) {
             let [x, y, z] = this.faces[face][i];
             addFace(x, y, z);
           }
-        } else {
-          // iterate through whole buffer
-          for (; i < axis3length; i++) {
-            for (var j; j < axis2length; j++) {
+        } // if (!faceBuffer.every((x) => x == 0)) debugger
+        // faceBuffer.fill(0)
 
-              for (var k; k < end; k++) {
-              }
-            }
-          }
-        }
-
-        faceBuffer.fill(0);
       }
 
       this.faces = [[], [], [], [], [], []];
@@ -6071,7 +6130,10 @@
           ty = Math.floor(atlas / 16) * texScale + tlPadding;
 
       if ((txs > 1 || tys > 1) && atlasOverride) {
+        // debugger
         atlas =  atlas;
+        txs = 1;
+        tys = 1; // return
       }
 
       let lookup = faces[face];
@@ -6455,7 +6517,7 @@
         countTris += Math.floor(rSize * chunk.transparent.length);
       }
 
-      if (this.highlight) {
+      if (this.highlight && config_render_highlight) {
         let {
           x,
           y,
