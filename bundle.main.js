@@ -3092,7 +3092,10 @@
       var {
         chunk
       } = this.locate(x, y, 0);
-      this.neighbors(chunk, 49, function (chunk) {
+      let radius = 9;
+      if (dist > Chunk.width + Chunk.height) radius = 25;
+      if (dist > (Chunk.width + Chunk.height) * 2) radius = 49;
+      this.neighbors(chunk, radius, function (chunk) {
         chunk.dist = dist$1(pt, chunk.center);
         if (chunk.dist > dist) return;
         neighbors.push(chunk);
@@ -4392,10 +4395,9 @@
   });
   var seedRandom_1 = seedRandom.resetGlobal;
 
-  const seed = 1018;
-  const biomeSmooth = 100; // 1 to Chunk.width*3, performance tuner
-
-  const caveness = [1.5, 4]; // 1.8 to 4.3
+  const seed = 42069;
+  const biomeSmooth = 23 * 1.5;
+  const caveness = [1.5, 4];
   const biomes = {
     "mountain": {
       "height": +.5,
@@ -4529,8 +4531,9 @@
       var blockMap = new Uint8Array(whd);
       var heightMap = new Uint8Array(wh);
       var totalHeight = 0;
-      var curr = fromValues$2((xBase + .5) * width, (yBase + .5) * height);
-      var nearest = this.chunkMap.within(curr, biomeSmooth);
+      var curr = fromValues$2((xBase + .5) * width, (yBase + .5) * height); // to find all relevant chunks we must search an extra sqrt(n+n)+jitter away
+
+      var nearest = this.chunkMap.within(curr, biomeSmooth + Math.sqrt(Chunk.width + Chunk.height) + ( 0 ));
       var distinctBiomes = false;
 
       for (var i = 0; i < nearest.length; i++) {
@@ -4548,6 +4551,7 @@
 
           if (distinctBiomes) {
             curr = fromValues$2(x + xBase * width, y + yBase * height);
+
             var sumInvDist = 0;
 
             for (var i = 0; i < nearest.length; i++) {
@@ -4555,13 +4559,13 @@
               let dist = dist$1(curr, checkChunk.center);
               checkChunk.dist = dist;
 
-              if ( checkChunk.dist > 23) {
+              if ( checkChunk.dist > biomeSmooth) {
                 checkChunk.invDist = 0;
                 continue;
               }
 
               samples[checkChunk.biome] = 0;
-              checkChunk.invDist = Math.pow(1 - checkChunk.dist / 23, 3);
+              checkChunk.invDist = Math.pow(1 - checkChunk.dist / biomeSmooth, 3);
               sumInvDist += checkChunk.invDist;
             }
 
