@@ -84,60 +84,6 @@
     return out;
   }
   /**
-   * Creates a new mat4 initialized with values from an existing matrix
-   *
-   * @param {mat4} a matrix to clone
-   * @returns {mat4} a new 4x4 matrix
-   */
-
-  function clone(a) {
-    var out = new ARRAY_TYPE(16);
-    out[0] = a[0];
-    out[1] = a[1];
-    out[2] = a[2];
-    out[3] = a[3];
-    out[4] = a[4];
-    out[5] = a[5];
-    out[6] = a[6];
-    out[7] = a[7];
-    out[8] = a[8];
-    out[9] = a[9];
-    out[10] = a[10];
-    out[11] = a[11];
-    out[12] = a[12];
-    out[13] = a[13];
-    out[14] = a[14];
-    out[15] = a[15];
-    return out;
-  }
-  /**
-   * Copy the values from one mat4 to another
-   *
-   * @param {mat4} out the receiving matrix
-   * @param {mat4} a the source matrix
-   * @returns {mat4} out
-   */
-
-  function copy(out, a) {
-    out[0] = a[0];
-    out[1] = a[1];
-    out[2] = a[2];
-    out[3] = a[3];
-    out[4] = a[4];
-    out[5] = a[5];
-    out[6] = a[6];
-    out[7] = a[7];
-    out[8] = a[8];
-    out[9] = a[9];
-    out[10] = a[10];
-    out[11] = a[11];
-    out[12] = a[12];
-    out[13] = a[13];
-    out[14] = a[14];
-    out[15] = a[15];
-    return out;
-  }
-  /**
    * Set a mat4 to the identity matrix
    *
    * @param {mat4} out the receiving matrix
@@ -434,7 +380,7 @@
    * @returns {vec3} a new 3D vector
    */
 
-  function clone$1(a) {
+  function clone(a) {
     var out = new ARRAY_TYPE(3);
     out[0] = a[0];
     out[1] = a[1];
@@ -478,26 +424,10 @@
    * @returns {vec3} out
    */
 
-  function copy$1(out, a) {
+  function copy(out, a) {
     out[0] = a[0];
     out[1] = a[1];
     out[2] = a[2];
-    return out;
-  }
-  /**
-   * Set the components of a vec3 to the given values
-   *
-   * @param {vec3} out the receiving vector
-   * @param {Number} x X component
-   * @param {Number} y Y component
-   * @param {Number} z Z component
-   * @returns {vec3} out
-   */
-
-  function set(out, x, y, z) {
-    out[0] = x;
-    out[1] = y;
-    out[2] = z;
     return out;
   }
   /**
@@ -756,7 +686,7 @@
    * @returns {vec4} a new 4D vector
    */
 
-  function clone$2(a) {
+  function clone$1(a) {
     var out = new ARRAY_TYPE(4);
     out[0] = a[0];
     out[1] = a[1];
@@ -790,7 +720,7 @@
    * @returns {vec4} out
    */
 
-  function copy$2(out, a) {
+  function copy$1(out, a) {
     out[0] = a[0];
     out[1] = a[1];
     out[2] = a[2];
@@ -3278,7 +3208,7 @@
       }
 
       line = new Line3(posA3.fromArray(sphere1), posB3.fromArray(sphere2));
-      self.line(sphere1, clone$1(sphere2), startFlood);
+      self.line(sphere1, clone(sphere2), startFlood);
     }
 
     rasterizeCylinder(sphere1, sphere2, check) {
@@ -3305,7 +3235,7 @@
       }
 
       line = new Line3(posA3.fromArray(sphere1), posB3.fromArray(sphere2));
-      self.line(sphere1, clone$1(sphere2), startFlood);
+      self.line(sphere1, clone(sphere2), startFlood);
     }
 
   }
@@ -4952,15 +4882,15 @@
           } = caveB;
           var starting = fromValues$1(x, y, z, radius);
           var ending = fromValues$1(ox, oy, oz, oradius);
-          var posA = clone$2(starting);
-          var posB = clone$2(starting);
+          var posA = clone$1(starting);
+          var posB = clone$1(starting);
           let resolution = 9; // rasterize a spline in parts
 
           for (var f = 0; f < 1; f += 1 / resolution) {
             lerp$1(posB, starting, ending, f + 1 / resolution);
             posB[2] = MathUtils.lerp(z, oz, MathUtils.smootherstep(f + 1 / resolution, 0, 1));
             this.chunkMap.rasterizeLine(posA, posB, (x, y, z, curr) => HillyGenerator.caveBlocks[curr] ? 0 : curr);
-            copy$2(posA, posB);
+            copy$1(posA, posB);
           }
         }
 
@@ -6231,6 +6161,8 @@
       this.highlight = null;
       this.tesselator = new BrilliantSurfaceExtractor(Chunk.width, Chunk.height, Chunk.depth);
       this.smallTesselator = new BrilliantSurfaceExtractor(1, 1, 1);
+      this.renderDistance = 1000;
+      this.renderPosition = [0, 0];
     }
 
     context(newgl) {
@@ -6257,8 +6189,10 @@
           },
           uniformLocations: {
             projectionMatrix: this.gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
-            modelViewMatrix: this.gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
-            sampler: this.gl.getUniformLocation(shaderProgram, 'uSampler')
+            viewMatrix: this.gl.getUniformLocation(shaderProgram, 'uViewMatrix'),
+            modelMatrix: this.gl.getUniformLocation(shaderProgram, 'uModelMatrix'),
+            sampler: this.gl.getUniformLocation(shaderProgram, 'uSampler'),
+            maximumDistance: this.gl.getUniformLocation(shaderProgram, 'uMaximumDistance')
           },
           program: shaderProgram,
           texture: allTiles,
@@ -6278,8 +6212,10 @@
           },
           uniformLocations: {
             projectionMatrix: this.gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
-            modelViewMatrix: this.gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
-            sampler: this.gl.getUniformLocation(shaderProgram, 'uSampler')
+            viewMatrix: this.gl.getUniformLocation(shaderProgram, 'uViewMatrix'),
+            modelMatrix: this.gl.getUniformLocation(shaderProgram, 'uModelMatrix'),
+            sampler: this.gl.getUniformLocation(shaderProgram, 'uSampler'),
+            maximumDistance: this.gl.getUniformLocation(shaderProgram, 'uMaximumDistance')
           },
           program: shaderProgram,
           texture: allTiles,
@@ -6299,9 +6235,11 @@
           },
           uniformLocations: {
             projectionMatrix: this.gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
-            modelViewMatrix: this.gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
+            viewMatrix: this.gl.getUniformLocation(shaderProgram, 'uViewMatrix'),
+            modelMatrix: this.gl.getUniformLocation(shaderProgram, 'uModelMatrix'),
             time: this.gl.getUniformLocation(shaderProgram, 'uTime'),
-            sampler: this.gl.getUniformLocation(shaderProgram, 'uSampler')
+            sampler: this.gl.getUniformLocation(shaderProgram, 'uSampler'),
+            maximumDistance: this.gl.getUniformLocation(shaderProgram, 'uMaximumDistance')
           },
           program: shaderProgram,
           texture: allTiles,
@@ -6413,18 +6351,30 @@
     }
 
     render(renderEvent, chunkMap) {
+      this.renderPosition[0] = (this.renderPosition[0] * 3 + renderEvent.camera.position[0]) / 4;
+      this.renderPosition[1] = (this.renderPosition[1] * 3 + renderEvent.camera.position[1]) / 4;
       var chunks = chunkMap.chunks;
       var time = Date.now() / 25000 % 1;
-      copy(this.modelViewMatrix, renderEvent.viewMatrix);
       var maximumRender = 10000;
       var rList = [];
       var countRenderableChunks = 0;
+      var nearestIncompleteDistance = 100000;
+      let chunkDiagonal = Math.sqrt(Chunk.width * Chunk.width + Chunk.height * Chunk.height);
+      let chunkRadius = chunkDiagonal / 2;
 
       for (let chunk of chunks.values()) {
-        if (!chunk.uploaded) continue;
-        if (chunk.renderSize == 0) continue;
+        let centerOfChunk = fromValues$2((chunk.x + .5) * Chunk.width, (chunk.y + .5) * Chunk.height);
+        chunk.distanceToCamera = distance$1(this.renderPosition, centerOfChunk);
 
-        if (chunk.unculled.length + chunk.regular.length + chunk.transparent.length == 0) {
+        if (!chunk.uploaded) {
+          if (nearestIncompleteDistance > chunk.distanceToCamera) {
+            nearestIncompleteDistance = chunk.distanceToCamera;
+          }
+
+          continue;
+        }
+
+        if (chunk.distanceToCamera - chunkDiagonal > this.renderDistance) {
           continue;
         }
 
@@ -6434,19 +6384,22 @@
           continue;
         }
 
-        var translation = create$2();
-        set(translation, chunk.x * Chunk.width, chunk.y * Chunk.height, 0);
-        chunk.modelViewMatrix = clone(renderEvent.viewMatrix);
-        translate(chunk.modelViewMatrix, chunk.modelViewMatrix, translation);
+        var translation = fromValues(chunk.x * Chunk.width, chunk.y * Chunk.height, 0);
+        chunk.modelMatrix = create$1();
+        translate(chunk.modelMatrix, chunk.modelMatrix, translation);
         rList.push(chunk);
       }
 
+      let completedDistance = nearestIncompleteDistance - chunkRadius;
+
+      if (this.renderDistance < completedDistance) {
+        this.renderDistance = (this.renderDistance * 4 + completedDistance) / 5;
+      } else {
+        this.renderDistance = (this.renderDistance + completedDistance) / 2;
+      }
+
       rList.sort(function (a, b) {
-        var dax = (a.x + .5) * Chunk.width - renderEvent.camera.position[0];
-        var day = (a.y + .5) * Chunk.height - renderEvent.camera.position[1];
-        var dbx = (b.x + .5) * Chunk.width - renderEvent.camera.position[0];
-        var dby = (b.y + .5) * Chunk.height - renderEvent.camera.position[1];
-        return dax * dax + day * day - (dbx * dbx + dby * dby);
+        return a.distanceToCamera - b.distanceToCamera;
       });
 
       if (rList.length == 0) {
@@ -6463,9 +6416,12 @@
       this.gl.activeTexture(this.gl.TEXTURE0);
       this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.regular.texture);
       this.gl.useProgram(this.regular.program);
+      this.gl.uniform1f(this.regular.uniformLocations.maximumDistance, this.renderDistance);
       this.gl.uniformMatrix4fv(this.regular.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+      this.gl.uniformMatrix4fv(this.regular.uniformLocations.viewMatrix, false, renderEvent.viewMatrix);
       this.gl.uniform1i(this.regular.uniformLocations.sampler, 0);
-      this.gl.disable(this.gl.BLEND);
+      this.gl.enable(this.gl.BLEND);
+      this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
       this.gl.enable(this.gl.DEPTH_TEST);
       this.gl.depthFunc(this.gl.LEQUAL);
       this.gl.enable(this.gl.CULL_FACE);
@@ -6473,52 +6429,51 @@
 
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
-        var rSize = chunk.renderSize;
-        if (Math.floor(rSize * chunk.regular.length) == 0) continue;
+        if (chunk.regular.length == 0) continue;
         if (countDrawCalls > maximumRender) break;
         countDrawCalls++;
-        this.gl.uniformMatrix4fv(this.regular.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
+        this.gl.uniformMatrix4fv(this.regular.uniformLocations.modelMatrix, false, chunk.modelMatrix);
         this.gl.bindVertexArray(chunk.regular.vao);
-        this.gl.drawElements(this.gl.TRIANGLES, Math.floor(rSize * chunk.regular.length), this.gl.UNSIGNED_INT, 0);
-        countTris += Math.floor(rSize * chunk.regular.length);
+        this.gl.drawElements(this.gl.TRIANGLES, chunk.regular.length, this.gl.UNSIGNED_INT, 0);
+        countTris += chunk.regular.length;
       }
 
       this.gl.useProgram(this.unculled.program);
+      this.gl.uniform1f(this.unculled.uniformLocations.maximumDistance, this.renderDistance);
       this.gl.uniformMatrix4fv(this.unculled.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+      this.gl.uniformMatrix4fv(this.unculled.uniformLocations.viewMatrix, false, renderEvent.viewMatrix);
       this.gl.uniform1i(this.unculled.uniformLocations.sampler, 0);
       this.gl.disable(this.gl.CULL_FACE);
       this.gl.vertexAttrib1f(this.unculled.attribLocations.vertexAtlas, 11);
 
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
-        var rSize = chunk.renderSize;
-        if (Math.floor(rSize * chunk.unculled.length) == 0) continue;
+        if (chunk.unculled.length == 0) continue;
         if (countDrawCalls > maximumRender) break;
         countDrawCalls++;
-        this.gl.uniformMatrix4fv(this.unculled.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
+        this.gl.uniformMatrix4fv(this.unculled.uniformLocations.modelMatrix, false, chunk.modelMatrix);
         this.gl.bindVertexArray(chunk.unculled.vao);
-        this.gl.drawElements(this.gl.TRIANGLES, Math.floor(rSize * chunk.unculled.length), this.gl.UNSIGNED_INT, 0);
-        countTris += Math.floor(rSize * chunk.unculled.length);
+        this.gl.drawElements(this.gl.TRIANGLES, chunk.unculled.length, this.gl.UNSIGNED_INT, 0);
+        countTris += chunk.unculled.length;
       }
 
       this.gl.useProgram(this.transparent.program);
+      this.gl.uniform1f(this.transparent.uniformLocations.maximumDistance, this.renderDistance);
       this.gl.uniformMatrix4fv(this.transparent.uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
+      this.gl.uniformMatrix4fv(this.transparent.uniformLocations.viewMatrix, false, renderEvent.viewMatrix);
       this.gl.uniform1f(this.transparent.uniformLocations.time, time);
       this.gl.uniform1i(this.transparent.uniformLocations.sampler, 0);
-      this.gl.enable(this.gl.BLEND);
-      this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
       this.gl.vertexAttrib1f(this.transparent.attribLocations.vertexAtlas, 255);
 
       for (var i = 0; i < rList.length; i++) {
         var chunk = rList[i];
-        var rSize = chunk.renderSize;
-        if (Math.floor(rSize * chunk.transparent.length) == 0) continue;
+        if (chunk.transparent.length == 0) continue;
         if (countDrawCalls > maximumRender) break;
         countDrawCalls++;
-        this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelViewMatrix, false, chunk.modelViewMatrix);
+        this.gl.uniformMatrix4fv(this.transparent.uniformLocations.modelMatrix, false, chunk.modelMatrix);
         this.gl.bindVertexArray(chunk.transparent.vao);
-        this.gl.drawElements(this.gl.TRIANGLES, Math.floor(rSize * chunk.transparent.length), this.gl.UNSIGNED_INT, 0);
-        countTris += Math.floor(rSize * chunk.transparent.length);
+        this.gl.drawElements(this.gl.TRIANGLES, chunk.transparent.length, this.gl.UNSIGNED_INT, 0);
+        countTris += chunk.transparent.length;
       }
 
       if (this.highlight && config_render_highlight) {
@@ -6533,19 +6488,18 @@
 
         if (chunk.triangles > 0) {
           this.blit(chunk);
-          var translation = create$2();
-          set(translation, x, y, z);
-          var modelViewMatrix = clone(renderEvent.viewMatrix);
-          translate(modelViewMatrix, modelViewMatrix, translation);
+          var translation = fromValues(x, y, z);
+          var modelMatrix = create$1();
+          translate(modelMatrix, modelMatrix, translation);
           var program = chunk.regular.length ? "regular" : chunk.transparent.length ? "transparent" : "unculled";
           this.gl.enable(this.gl.POLYGON_OFFSET_FILL);
           this.gl.polygonOffset(-1.0, -.1);
           this.gl.blendFunc(this.gl.CONSTANT_COLOR, this.gl.SRC_COLOR);
-          this.gl.depthFunc(this.gl.LEQUAL); // this.gl.enable(this.gl.CULL_FACE)
-
+          this.gl.depthFunc(this.gl.LEQUAL);
           this.gl.useProgram(this[program].program);
           this.gl.uniformMatrix4fv(this[program].uniformLocations.projectionMatrix, false, renderEvent.projectionMatrix);
-          this.gl.uniformMatrix4fv(this[program].uniformLocations.modelViewMatrix, false, modelViewMatrix);
+          this.gl.uniformMatrix4fv(this[program].uniformLocations.viewMatrix, false, renderEvent.viewMatrix);
+          this.gl.uniformMatrix4fv(this[program].uniformLocations.modelMatrix, false, modelMatrix);
           this.gl.bindVertexArray(chunk[program].vao);
           this.gl.drawElements(this.gl.TRIANGLES, chunk[program].length, this.gl.UNSIGNED_INT, 0);
           this.gl.disable(this.gl.POLYGON_OFFSET_FILL);
@@ -6562,23 +6516,25 @@
     }
 
   }
-
   const chunkShader2 = `
     #ifdef VERT_SHADER
     precision highp float;
     precision highp int;
     precision highp sampler2DArray;
 
-    in vec4 aVertexPosition;
+    in vec3 aVertexPosition;
     in float aVertexLight;
     in vec2 aVertexTexture;
     in float aVertexAtlas;
 
-    uniform mat4 uModelViewMatrix;
+    uniform mat4 uModelMatrix;
+    uniform mat4 uViewMatrix;
     uniform mat4 uProjectionMatrix;
+    uniform float uMaximumDistance;
     uniform float uTime;
 
     out float vLight;
+    out float vDistance;
     out vec2 vTextureCoord;
     flat out int vAtlas;
 
@@ -6590,9 +6546,19 @@
     }
 
     void main(void) {
-        vec4 pos = uModelViewMatrix * aVertexPosition;
-        vec4 realPos = aVertexPosition;
-        vec2 tex = aVertexTexture;
+        vec3 cameraPosition = (inverse(uViewMatrix) * vec4(0.0,0.0,0.0,1.0)).xyz;
+
+        vec4 worldSpace = uModelMatrix * vec4(aVertexPosition, 1.0);
+        vec3 relativeToCamera = cameraPosition.xyz - worldSpace.xyz;
+        float distanceToCamera = length(relativeToCamera.xy);
+        vDistance = 1.0-distanceToCamera / uMaximumDistance;
+        // if (vDistance < .3) {
+        //     relativeToCamera.x /= vDistance / .3;
+        //     relativeToCamera.y /= vDistance / .3;
+        // }
+        vec4 worldSpaceReconstructed = vec4(cameraPosition + relativeToCamera, 1.0);
+        vec4 viewSpace = uViewMatrix * worldSpace;
+        vec4 pos = uProjectionMatrix * viewSpace;
 
         vAtlas = int(aVertexAtlas);
         // #ifdef TRANSPARENT
@@ -6601,21 +6567,14 @@
         //     float b = sin((pos.y/4.0)+uTime*8.0*3.1415926538);
         //     tex.x += a/5.0;
         //     tex.y += b/5.0;
-        //     realPos.z += -.18 + (a/20.0 + b/20.0) * .8;
+        //     pos.z += -.18 + (a/20.0 + b/20.0) * .8;
         // }
         // #endif
 
-        gl_Position = uProjectionMatrix * uModelViewMatrix * realPos;
+        gl_Position = pos;
 
-        vLight = mix(gamma, 1.0, aVertexLight/maxLight);
-
-        // bool xo = (mod(pos.x, 2.0)==0.0);
-        // bool yo = (mod(pos.y, 2.0)==0.0);
-        // // bool zo = (mod(pos.z, 2.0)==0.0);
-        // if (xo && (tex.x == 0.0)) {
-        //     tex.x += 1.0;
-        // }
-        
+        vLight = mix(gamma, 1.0, aVertexLight/maxLight);        
+        vec2 tex = aVertexTexture;
         vTextureCoord = tex/1.0;
     }
 
@@ -6629,6 +6588,7 @@
     precision mediump sampler2D;
 
     in float vLight;
+    in float vDistance;
     in vec2 vTextureCoord;
     flat in int vAtlas;
 
@@ -6637,27 +6597,37 @@
     out vec4 FragColor;
 
     void main(void) {
-        // #ifdef TRANSPARENT
+        if (vDistance < 0.0) {
+            // discard;
+        }
+
+        float distanceFalloff = 1.0;
+        if (vDistance < .02) {
+            distanceFalloff = vDistance / .02;
+        }
+        float colorFalloff = 0.0;
+        if (vDistance < .2) {
+            colorFalloff = (1.0-vDistance / .2) / 3.0;
+        }
+
         vec2 tex = vTextureCoord;
-        // #else
-        // vec2 tex = clamp(vTextureCoord, 0.0, 1.0);
-        // #endif
 
         vec4 textureColor = vec4(1.0,1.0,1.0,1.0); //
         textureColor = texture(uSampler, vec3(tex*16.0/16.0, vAtlas));
         // textureColor = texture(uSampler, vec2(tex*16.0/16.0));
+        textureColor = mix(textureColor, vec4(.5,.5,1.0,1.0), colorFalloff);
         float lighting = vLight;
         #ifdef TRANSPARENT
-            FragColor = vec4(textureColor.rgb * lighting, textureColor.a * .5);
+            FragColor = vec4(textureColor.rgb * lighting, distanceFalloff * textureColor.a * .5);
         #else
             #ifdef UNCULLED
                 if (textureColor.a < 1.0) {
                     discard;
                 }
-                FragColor = vec4(textureColor.rgb * lighting, textureColor.a);
+                FragColor = vec4(textureColor.rgb * lighting, distanceFalloff * textureColor.a);
             #else
                 textureColor.b += (1.0-lighting)/2.0;
-                FragColor = vec4(textureColor.rgb * lighting, 1);
+                FragColor = vec4(textureColor.rgb * lighting, distanceFalloff);
             #endif
         #endif
 
@@ -7113,9 +7083,9 @@
       overlay.appendChild(debugElement);
       var renderDistanceElement = document.createElement("input");
       renderDistanceElement.type = "range";
-      renderDistanceElement.value = 7;
-      renderDistanceElement.min = 1;
-      renderDistanceElement.max = 31;
+      renderDistanceElement.value = 9;
+      renderDistanceElement.min = 6;
+      renderDistanceElement.max = 25;
       renderDistanceElement.step = 1;
       this.renderDistanceElement = renderDistanceElement;
       optionsElement.appendChild(renderDistanceElement);
@@ -7191,7 +7161,6 @@
         canvas: canvas,
         supports: this.supports
       });
-      var lastFrame = performance.now();
       var efps = 500;
       var timerPending = false;
       let query;
@@ -7265,7 +7234,6 @@
         timers.delay = (timers.delay * metricSmoothing + (start - fTime)) / (metricSmoothing + 1);
         timers.total = (timers.total * metricSmoothing + (timers.cpu + timers.gpu + timers.delay)) / (metricSmoothing + 1);
         if (timers.total > 0.001) efps = 1000 / timers.total;
-        lastFrame = start;
 
         let f = val => (Math.floor(val * 10) / 10).toFixed(1);
 
@@ -7459,17 +7427,26 @@
     }
 
     prerender() {
-      var eyes = clone$1(this.position);
+      var eyes = clone(this.position);
       add(eyes, eyes, [0, 0, 1.55]);
       lerp(this.camera.position, this.camera.position, eyes, .9);
       lerp$2(this._looking, this._looking, this.angle, .9);
       var lookAt = fromValues(1, 0, 0);
       transformQuat(lookAt, lookAt, this._looking);
       add(lookAt, this.camera.position, lookAt);
-      copy$1(this.camera.target, lookAt);
+      copy(this.camera.target, lookAt);
       var rayDir = create$2();
       sub(rayDir, this.camera.target, this.camera.position);
       this.targetVoxel = this.chunkMap.hitscan(this.camera.position, rayDir);
+      let {
+        x: vx,
+        y: vy,
+        z: vz
+      } = this.targetVoxel;
+      let {
+        chunk
+      } = this.chunkMap.locate(vx, vy, vz);
+      if (!chunk.map) this.targetVoxel = false;
     }
 
     colliding() {
@@ -7775,7 +7752,10 @@
         }
       }
 
-      if (center.id != this.cache.chunkID || rd != this.cache.renderDistance) {
+      let chunkRadius = Math.sqrt(Chunk.width * Chunk.width + Chunk.height * Chunk.height) / 2;
+      let chunksByDistance = [];
+
+      if (center.id != this.cache.chunkID || rd != this.cache.renderDistance || true) {
         this.pipe({
           "event": "chunk_of_interest",
           "x": center.x,
@@ -7790,20 +7770,25 @@
           chunk.isVisible = false;
           chunk.shouldShow = false;
           chunk.shouldHide = true;
+          chunk.distanceToPlayer = dist$1([this.player.position[0], this.player.position[1]], [chunk.x * Chunk.width, chunk.y * Chunk.height]);
+          chunksByDistance.push(chunk);
         } // update the status of chunks in our viewing range
 
 
-        var toSend = this.chunks.spiral(center.x, center.y, 39);
+        var toSend = this.chunks.spiral(center.x, center.y, this.cache.renderDistance * 2);
 
         for (var i = 0; i < toSend.length; i++) {
           let chunk = toSend[i];
           chunk.isHot = true;
-          chunk.isVisible = dist$1([center.x, center.y], [chunk.x, chunk.y]) <= this.cache.renderDistance;
+          chunk.isVisible = chunk.distanceToPlayer <= this.cache.renderDistance * chunkRadius;
         }
-      } // update the visibility flag
+      }
 
+      chunksByDistance.sort(function (a, b) {
+        return a.distanceToPlayer - b.distanceToPlayer;
+      }); // update the visibility flag
 
-      for (let chunk of this.chunks.chunks.values()) {
+      for (let chunk of chunksByDistance) {
         if (!chunk.isHot) continue;
         if (!chunk.isVisible) continue;
         chunk.shouldHide = false;
@@ -7819,9 +7804,9 @@
         chunk.shouldShow = true;
       }
 
-      var allowedWork = 10; // for every chunk, see if we need to free things
+      var allowedWork = 7; // for every chunk, see if we need to free things
 
-      for (let chunk of this.chunks.chunks.values()) {
+      for (let chunk of chunksByDistance) {
         // create or destroy the mesh
         if (chunk.shouldShow) {
           if (!chunk.meshUploaded && chunk.meshReady) {
@@ -7846,21 +7831,9 @@
 
         if (chunk.shouldHide) {
           if (chunk.meshUploaded) {
-            chunk.renderSize -= .02;
-
-            if (chunk.renderSize < 0) {
-              this.renderer.free(chunk);
-              chunk.meshUploaded = false;
-              chunk.meshDirty = true;
-            }
-          }
-        } else {
-          if (chunk.meshUploaded) {
-            chunk.renderSize += .02;
-
-            if (chunk.renderSize > 1) {
-              chunk.renderSize = 1;
-            }
+            this.renderer.free(chunk);
+            chunk.meshUploaded = false;
+            chunk.meshDirty = true;
           }
         } // clean this chunk up entirely
 
@@ -7929,11 +7902,6 @@
 
         case "spawn":
           this.player = new Player(this.canvas, this.chunks);
-
-          for (let chunk of this.chunks.chunks.values()) {
-            chunk.renderSize = 1;
-          }
-
           this.step();
           this.canvas.finishedLoading();
           return;
@@ -7947,7 +7915,6 @@
           chunk.biome = ev.chunk.biome;
           chunk.wasSent = true;
           chunk.meshDirty = true;
-          chunk.renderSize = 0;
           return;
 
         case "tesselated":
@@ -7964,10 +7931,8 @@
           chunk.meshPending = false;
           if (!chunk.meshUploaded) return; // dont log the normal case
 
-          var oldRS = chunk.renderSize;
           this.renderer.free(chunk);
           this.renderer.blit(chunk);
-          chunk.renderSize = oldRS;
           return;
 
         default:
