@@ -2882,18 +2882,39 @@
   class InfiniteChunkMap {
     constructor() {
       this.chunks = new Map();
+      this.coldChunks = new Map();
     }
 
     getChunk(i, j) {
       var id = Chunk.getScudzik(i, j);
       var chunk = this.chunks.get(id);
 
-      if (!chunk) {
-        chunk = new Chunk(i, j);
-        this.chunks.set(id, chunk);
+      if (chunk) {
+        if (chunk.location != "hot-cache") throw new Error("cold-in-hot");
+        return chunk;
       }
 
+      chunk = this.coldChunks.get(id);
+
+      if (chunk) {
+        if (chunk.location != "cold-cache") throw new Error("hot-in-cold");
+        chunk.location = "hot-cache";
+        this.chunks.set(id, chunk);
+        this.coldChunks.delete(id);
+        return chunk;
+      }
+
+      chunk = new Chunk(i, j);
+      chunk.location = "hot-cache";
+      this.chunks.set(id, chunk);
       return chunk;
+    }
+
+    free(chunk) {
+      if (chunk.location == "cold-cache") throw new Error("double free");
+      chunk.location = "cold-cache";
+      this.chunks.delete(chunk.id);
+      this.coldChunks.set(chunk.id, chunk);
     }
 
     locate(x, y, z) {
@@ -4395,6 +4416,21 @@
       chunk.initialBiome = this.calculateBiome(chunk);
     }
 
+    calculateBiome(chunk) {
+      // return "tundra"
+      var roughness = (this.noise2D(chunk.x / 10 + .5, chunk.y / 10) * 2 + this.noise2D(chunk.x / 20 + .5, chunk.y / 20)) / 3;
+      var moisture = (this.noise2D((chunk.x + 1000) / 25 + .5, chunk.y / 25) * 2 + this.noise2D(chunk.x / 50 + .5, chunk.y / 50)) / 3; // return ["ocean","mountain","desert","plains","forest"][Math.floor(chunk.rng()*5)]
+      // return "plains"
+      // return roughness>0?"ocean":"forest"
+
+      if (roughness > .3) return "mountain";
+      if (roughness < -.3) return "ocean";
+      if (moisture < -.4) return "desert";
+      if (moisture < 0) return "plains";
+      if (moisture < .4) return "forest";
+      return "tundra";
+    }
+
     randomgen(chunk) {
       if (chunk.didRNG) return;
       chunk.didRNG = true;
@@ -4409,7 +4445,9 @@
       var rivers = 1 - Math.abs(this.noise2D(chunk.x / (30 / rVal) + 5.5, chunk.y / (30 / rVal)) * 2); // rivers *= (1+this.noise2D(chunk.x / 50 + 5.5, chunk.y / 50))/2
 
       if (rivers > rVal) chunk.biome = "river";
-      chunk.center = fromValues$2((chunk.x + chunk.rng()) * Chunk.width, (chunk.y + chunk.rng()) * Chunk.height);
+      let width = Chunk.width,
+          height = Chunk.height;
+      chunk.center = fromValues$2((chunk.x + chunk.rng()) * width, (chunk.y + chunk.rng()) * height);
       var eh = biomes[chunk.biome].height;
       chunk.roughHeight = this.middle + eh * (eh < 0 ? this.middle - this.lower : this.higher - this.middle);
       var caveRNG = chunk.rng();
@@ -4422,27 +4460,163 @@
         heightRNG = Math.sign(heightRNG) * Math.pow(Math.abs(heightRNG), 1);
         heightRNG = heightRNG / 2 + .5;
         chunk.caves.push({
-          x: chunk.x * Chunk.width + Math.floor(chunk.rng() * Chunk.width),
-          y: chunk.y * Chunk.height + Math.floor(chunk.rng() * Chunk.height),
+          x: chunk.x * width + Math.floor(chunk.rng() * width),
+          y: chunk.y * height + Math.floor(chunk.rng() * height),
           z: Math.floor(heightRNG * (chunk.roughHeight * .95) + 5),
           radius: radius
         });
       }
-    }
 
-    calculateBiome(chunk) {
-      // return "tundra"
-      var roughness = (this.noise2D(chunk.x / 10 + .5, chunk.y / 10) * 2 + this.noise2D(chunk.x / 20 + .5, chunk.y / 20)) / 3;
-      var moisture = (this.noise2D((chunk.x + 1000) / 25 + .5, chunk.y / 25) * 2 + this.noise2D(chunk.x / 50 + .5, chunk.y / 50)) / 3; // return ["ocean","mountain","desert","plains","forest"][Math.floor(chunk.rng()*5)]
-      // return "plains"
-      // return roughness>0?"ocean":"forest"
+      var structures = new Uint8Array(width * height);
+      chunk.structures = [];
 
-      if (roughness > .3) return "mountain";
-      if (roughness < -.3) return "ocean";
-      if (moisture < -.4) return "desert";
-      if (moisture < 0) return "plains";
-      if (moisture < .4) return "forest";
-      return "tundra";
+      if (chunk.biome == "forest") {
+        for (var i = 0; i < 5; i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["pine", x + chunk.x * width, y + chunk.y * height]);
+        }
+
+        for (var i = 0; i < 10; i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["tuft", x + chunk.x * width, y + chunk.y * height]);
+        }
+
+        for (var i = 0; i < 5; i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["plant", x + chunk.x * width, y + chunk.y * height]);
+        }
+      }
+
+      if (chunk.biome == "plains") {
+        if (chunk.rng() < .2) {
+          for (var i = 0; i < 5; i++) {
+            var x = Math.floor(chunk.rng() * width),
+                y = Math.floor(chunk.rng() * height);
+            var id = Chunk.index2d(x, y);
+            if (structures[id]) continue;
+            structures[id] = 1;
+            chunk.structures.push(["plant", x + chunk.x * width, y + chunk.y * height]);
+          }
+        } else {
+          for (var i = 0; i < 12; i++) {
+            var x = Math.floor(chunk.rng() * width),
+                y = Math.floor(chunk.rng() * height);
+            var id = Chunk.index2d(x, y);
+            if (structures[id]) continue;
+            structures[id] = 1;
+            chunk.structures.push(["tuft", x + chunk.x * width, y + chunk.y * height]);
+          }
+        }
+
+        for (i = 0; i < (chunk.rng() < .1) ? 1 : 0; i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["tree", x + chunk.x * width, y + chunk.y * height]);
+        }
+      }
+
+      if (chunk.biome == "tundra") {
+        for (var i = 0; i < 5; i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["twig", x + chunk.x * width, y + chunk.y * height]);
+        }
+
+        let rng = chunk.rng() < .1;
+
+        for (i = 0; i < (rng ? 7 : 0); i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["pine", x + chunk.x * width, y + chunk.y * height]);
+        }
+      }
+
+      if (chunk.biome == "desert") {
+        for (var i = 0; i < 8; i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["twig", x + chunk.x * width, y + chunk.y * height]);
+        }
+
+        for (i = 0; i < (chunk.rng() < .01) ? 1 : 0; i++) {
+          var x = Math.floor(chunk.rng() * width),
+              y = Math.floor(chunk.rng() * height);
+          var id = Chunk.index2d(x, y);
+          if (structures[id]) continue;
+          structures[id] = 1;
+          chunk.structures.push(["monolith", x + chunk.x * width, y + chunk.y * height]);
+        }
+      }
+
+      let per10kBlocks = chunk.roughHeight * width * height / 10000;
+
+      for (let i = 0; i < 3 * per10kBlocks; i++) {
+        var diamond = {
+          block: 17,
+          x: chunk.x * width + width * chunk.rng(),
+          y: chunk.y * height + height * chunk.rng(),
+          z: chunk.roughHeight * Math.pow(chunk.rng(), 6),
+          r: 1.5
+        };
+        chunk.structures.push(["stone_vein", diamond]);
+      }
+
+      for (let i = 0; i < 6 * per10kBlocks; i++) {
+        var gold = {
+          block: 14,
+          x: chunk.x * width + width * chunk.rng(),
+          y: chunk.y * height + height * chunk.rng(),
+          z: chunk.roughHeight * Math.pow(chunk.rng(), 4),
+          r: 1.6
+        };
+        chunk.structures.push(["stone_vein", gold]);
+      }
+
+      for (let i = 0; i < 10 * per10kBlocks; i++) {
+        var iron = {
+          block: 15,
+          x: chunk.x * width + width * chunk.rng(),
+          y: chunk.y * height + height * chunk.rng(),
+          z: chunk.roughHeight * Math.pow(chunk.rng(), 2),
+          r: 1.7
+        };
+        chunk.structures.push(["stone_vein", iron]);
+      }
+
+      for (let i = 0; i < 12 * per10kBlocks; i++) {
+        var coal = {
+          block: 16,
+          x: chunk.x * width + width * chunk.rng(),
+          y: chunk.y * height + height * chunk.rng(),
+          z: chunk.roughHeight * Math.pow(chunk.rng(), 1),
+          r: 1.9
+        };
+        chunk.structures.push(["stone_vein", coal]);
+      }
     }
 
     generate(chunk) {
@@ -4460,7 +4634,6 @@
       var whd = wh * depth;
       var blockMap = new Uint8Array(whd);
       var heightMap = new Uint8Array(wh);
-      var totalHeight = 0;
       var curr = fromValues$2((xBase + .5) * width, (yBase + .5) * height); // to find all relevant chunks we must search an extra sqrt(n+n)+jitter away
 
       var nearest = this.chunkMap.within(curr, biomeSmooth + Math.sqrt(Chunk.width + Chunk.height) + ( 0 ));
@@ -4661,164 +4834,11 @@
           }
 
           heightMap[Chunk.index2d(x, y)] = highestBlock;
-          totalHeight += highestBlock;
         }
       }
-
-      chunk.averageHeight = totalHeight / (Chunk.width * Chunk.height); // console.log("minmax", min, max)
 
       chunk.map = blockMap;
-      chunk.heights = heightMap;
-      var structures = new Uint8Array(wh);
-      chunk.structures = [];
-
-      if (chunk.biome == "forest") {
-        for (var i = 0; i < 5; i++) {
-          var x = Math.floor(chunk.rng() * width),
-              y = Math.floor(chunk.rng() * height);
-          var id = Chunk.index2d(x, y);
-          if (structures[id]) continue;
-          structures[id] = 1;
-          chunk.structures.push(["pine", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
-        }
-
-        for (var i = 0; i < 10; i++) {
-          var x = Math.floor(chunk.rng() * width),
-              y = Math.floor(chunk.rng() * height);
-          var id = Chunk.index2d(x, y);
-          if (structures[id]) continue;
-          structures[id] = 1;
-          chunk.structures.push(["tuft", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
-        }
-
-        for (var i = 0; i < 5; i++) {
-          var x = Math.floor(chunk.rng() * width),
-              y = Math.floor(chunk.rng() * height);
-          var id = Chunk.index2d(x, y);
-          if (structures[id]) continue;
-          structures[id] = 1;
-          chunk.structures.push(["plant", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
-        }
-      }
-
-      if (chunk.biome == "plains") {
-        if (chunk.rng() < .2) {
-          for (var i = 0; i < 5; i++) {
-            var x = Math.floor(chunk.rng() * width),
-                y = Math.floor(chunk.rng() * height);
-            var id = Chunk.index2d(x, y);
-            if (structures[id]) continue;
-            structures[id] = 1;
-            chunk.structures.push(["plant", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
-          }
-        } else {
-          for (var i = 0; i < 12; i++) {
-            var x = Math.floor(chunk.rng() * width),
-                y = Math.floor(chunk.rng() * height);
-            var id = Chunk.index2d(x, y);
-            if (structures[id]) continue;
-            structures[id] = 1;
-            chunk.structures.push(["tuft", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
-          }
-        }
-
-        for (i = 0; i < (chunk.rng() < .1) ? 1 : 0; i++) {
-          var x = Math.floor(chunk.rng() * width),
-              y = Math.floor(chunk.rng() * height);
-          var id = Chunk.index2d(x, y);
-          if (structures[id]) continue;
-          structures[id] = 1;
-          chunk.structures.push(["tree", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
-        }
-      }
-
-      if (chunk.biome == "tundra") {
-        for (var i = 0; i < 5; i++) {
-          var x = Math.floor(chunk.rng() * width),
-              y = Math.floor(chunk.rng() * height);
-          var id = Chunk.index2d(x, y);
-          if (structures[id]) continue;
-          structures[id] = 1;
-          chunk.structures.push(["twig", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
-        }
-
-        let rng = chunk.rng() < .1;
-
-        for (i = 0; i < (rng ? 7 : 0); i++) {
-          var x = Math.floor(chunk.rng() * width),
-              y = Math.floor(chunk.rng() * height);
-          var id = Chunk.index2d(x, y);
-          if (structures[id]) continue;
-          structures[id] = 1;
-          chunk.structures.push(["pine", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
-        }
-      }
-
-      if (chunk.biome == "desert") {
-        for (var i = 0; i < 8; i++) {
-          var x = Math.floor(chunk.rng() * width),
-              y = Math.floor(chunk.rng() * height);
-          var id = Chunk.index2d(x, y);
-          if (structures[id]) continue;
-          structures[id] = 1;
-          chunk.structures.push(["twig", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] + 1]);
-        }
-
-        for (i = 0; i < (chunk.rng() < .01) ? 1 : 0; i++) {
-          var x = Math.floor(chunk.rng() * width),
-              y = Math.floor(chunk.rng() * height);
-          var id = Chunk.index2d(x, y);
-          if (structures[id]) continue;
-          structures[id] = 1;
-          chunk.structures.push(["monolith", x + chunk.x * width, y + chunk.y * height, chunk.heights[id] - 1]);
-        }
-      }
-
-      let per10kBlocks = chunk.averageHeight * Chunk.width * Chunk.height / 10000;
-
-      for (let i = 0; i < 3 * per10kBlocks; i++) {
-        var diamond = {
-          block: 17,
-          x: chunk.x * width + Chunk.width * chunk.rng(),
-          y: chunk.y * height + Chunk.height * chunk.rng(),
-          z: chunk.averageHeight * Math.pow(chunk.rng(), 6),
-          r: 1.5
-        };
-        chunk.structures.push(["stone_vein", diamond]);
-      }
-
-      for (let i = 0; i < 6 * per10kBlocks; i++) {
-        var gold = {
-          block: 14,
-          x: chunk.x * width + Chunk.width * chunk.rng(),
-          y: chunk.y * height + Chunk.height * chunk.rng(),
-          z: chunk.averageHeight * Math.pow(chunk.rng(), 4),
-          r: 1.6
-        };
-        chunk.structures.push(["stone_vein", gold]);
-      }
-
-      for (let i = 0; i < 10 * per10kBlocks; i++) {
-        var iron = {
-          block: 15,
-          x: chunk.x * width + Chunk.width * chunk.rng(),
-          y: chunk.y * height + Chunk.height * chunk.rng(),
-          z: chunk.averageHeight * Math.pow(chunk.rng(), 2),
-          r: 1.7
-        };
-        chunk.structures.push(["stone_vein", iron]);
-      }
-
-      for (let i = 0; i < 12 * per10kBlocks; i++) {
-        var coal = {
-          block: 16,
-          x: chunk.x * width + Chunk.width * chunk.rng(),
-          y: chunk.y * height + Chunk.height * chunk.rng(),
-          z: chunk.averageHeight * Math.pow(chunk.rng(), 1),
-          r: 1.9
-        };
-        chunk.structures.push(["stone_vein", coal]);
-      }
+      chunk.heights = heightMap; // pair up the caves
 
       let allCavePairs = [];
 
@@ -4858,103 +4878,115 @@
     populateChunk(chunk) {
       if (chunk.populated) return;
       this.chunkMap.neighbors(chunk, 25, this.generate.bind(this));
+      chunk.populated = true;
       var start = performance.now();
       performance.mark("populate");
-      var item;
+      let item;
+      let max = 10000;
 
       while (item = chunk.structures.pop()) {
-        if (item[0] == "cave") {
-          var {
-            bCave: caveB,
-            aCave: caveA
-          } = item[1];
-          var {
-            x,
-            y,
-            z,
-            radius
-          } = caveA;
-          var {
-            x: ox,
-            y: oy,
-            z: oz,
-            radius: oradius
-          } = caveB;
-          var starting = fromValues$1(x, y, z, radius);
-          var ending = fromValues$1(ox, oy, oz, oradius);
-          var posA = clone$1(starting);
-          var posB = clone$1(starting);
-          let resolution = 9; // rasterize a spline in parts
+        if (0 > --max) debugger;
 
-          for (var f = 0; f < 1; f += 1 / resolution) {
-            lerp$1(posB, starting, ending, f + 1 / resolution);
-            posB[2] = MathUtils.lerp(z, oz, MathUtils.smootherstep(f + 1 / resolution, 0, 1));
-            this.chunkMap.rasterizeLine(posA, posB, (x, y, z, curr) => HillyGenerator.caveBlocks[curr] ? 0 : curr);
-            copy$1(posA, posB);
-          }
-        }
+        switch (item[0]) {
+          case "cave":
+            var {
+              bCave: caveB,
+              aCave: caveA
+            } = item[1];
+            var {
+              x,
+              y,
+              z,
+              radius
+            } = caveA;
+            var {
+              x: ox,
+              y: oy,
+              z: oz,
+              radius: oradius
+            } = caveB;
+            var starting = fromValues$1(x, y, z, radius);
+            var ending = fromValues$1(ox, oy, oz, oradius);
+            var posA = clone$1(starting);
+            var posB = clone$1(starting);
+            let resolution = 9; // rasterize a spline in parts
 
-        if (item[0] == "monolith") {
-          let [, x, y, z] = item;
-          x += .5;
-          y += .5;
-          let height = chunk.rng() * 4 + 4;
+            for (var f = 0; f < 1; f += 1 / resolution) {
+              lerp$1(posB, starting, ending, f + 1 / resolution);
+              posB[2] = MathUtils.lerp(z, oz, MathUtils.smootherstep(f + 1 / resolution, 0, 1));
+              this.chunkMap.rasterizeLine(posA, posB, (x, y, z, curr) => HillyGenerator.caveBlocks[curr] ? 0 : curr);
+              copy$1(posA, posB);
+            }
 
-          for (let i = 0; i < 4; i++) this.chunkMap.rasterizeCylinder([x, y, z + i * height, 7 - i], [x, y, z + (i + 1) * height, 7 - i], (x, y, z, curr) => curr == 0 ? 18 : curr);
+            break;
 
-          for (let i = 0; i < 4; i++) this.chunkMap.rasterizeCylinder([x, y, z + i * height, 5 - i], [x, y, z + (i + 1) * height, 5 - i], (x, y, z, curr) => curr == 18 ? 0 : curr);
+          case "monolith":
+            var [, x, y] = item;
+            var z = this.chunkMap.height(x, y) - 2;
+            x += .5;
+            y += .5;
+            let height = chunk.rng() * 4 + 4;
 
-          this.chunkMap.rasterizeLine([x, y, z + 4, .1], [x, y, z + 4.1, 0], (x, y, z, curr) => curr == 0 ? 19 : curr);
-        }
+            for (let i = 0; i < 4; i++) this.chunkMap.rasterizeCylinder([x, y, z + i * height, 7 - i], [x, y, z + (i + 1) * height, 7 - i], (x, y, z, curr) => curr == 0 ? 18 : curr);
 
-        if (item[0] == "stone_vein") {
-          let {
-            x,
-            y,
-            z,
-            r,
-            block
-          } = item[1];
-          this.setCircleIf(x, y, z, r, block, HillyGenerator.veinBlocks);
-        }
+            for (let i = 0; i < 4; i++) this.chunkMap.rasterizeCylinder([x, y, z + i * height, 5 - i], [x, y, z + (i + 1) * height, 5 - i], (x, y, z, curr) => curr == 18 ? 0 : curr);
 
-        if (item[0] == "tree") {
-          var [, x, y, z] = item;
-          var under = this.chunkMap.at(x, y, z - 1);
-          if (under != 2) continue;
-          this.growTree(x, y, z, chunk);
-        }
+            this.chunkMap.rasterizeLine([x, y, z + 4, .1], [x, y, z + 4.1, 0], (x, y, z, curr) => curr == 0 ? 19 : curr);
+            break;
 
-        if (item[0] == "pine") {
-          var [, x, y, z] = item;
-          var under = this.chunkMap.at(x, y, z - 1);
-          if (under != 2 && under != 20) continue;
-          this.growPine(x, y, z, chunk);
-        }
+          case "stone_vein":
+            var {
+              x,
+              y,
+              z,
+              r,
+              block
+            } = item[1];
+            this.setCircleIf(x, y, z, r, block, HillyGenerator.veinBlocks);
+            break;
 
-        if (item[0] == "plant") {
-          var [, x, y, z] = item;
-          var under = this.chunkMap.at(x, y, z - 1);
-          if (under != 2) continue;
-          this.chunkMap.set(x, y, z, 7);
-        }
+          case "tree":
+            var [, x, y] = item;
+            var z = this.chunkMap.height(x, y) + 1;
+            var under = this.chunkMap.at(x, y, z - 1);
+            if (under != 2) break;
+            this.growTree(x, y, z, chunk);
+            break;
 
-        if (item[0] == "tuft") {
-          var [, x, y, z] = item;
-          var under = this.chunkMap.at(x, y, z - 1);
-          if (under != 10 && under != 2) continue;
-          this.chunkMap.set(x, y, z, 8);
-        }
+          case "pine":
+            var [, x, y] = item;
+            var z = this.chunkMap.height(x, y) + 1;
+            var under = this.chunkMap.at(x, y, z - 1);
+            if (under != 2 && under != 20) break;
+            this.growPine(x, y, z, chunk);
+            break;
 
-        if (item[0] == "twig") {
-          var [, x, y, z] = item;
-          var under = this.chunkMap.at(x, y, z - 1);
-          if (under != 10 && under != 20) continue;
-          this.chunkMap.set(x, y, z, 13);
+          case "plant":
+            var [, x, y] = item;
+            var z = this.chunkMap.height(x, y) + 1;
+            var under = this.chunkMap.at(x, y, z - 1);
+            if (under != 2) break;
+            this.chunkMap.set(x, y, z, 7);
+            break;
+
+          case "tuft":
+            var [, x, y] = item;
+            var z = this.chunkMap.height(x, y) + 1;
+            var under = this.chunkMap.at(x, y, z - 1);
+            if (under != 10 && under != 2) break;
+            this.chunkMap.set(x, y, z, 8);
+            break;
+
+          case "twig":
+            var [, x, y] = item;
+            var z = this.chunkMap.height(x, y) + 1;
+            var under = this.chunkMap.at(x, y, z - 1);
+            if (under != 10 && under != 20) break;
+            this.chunkMap.set(x, y, z, 13);
+            break;
         }
       }
 
-      chunk.populated = true;
       chunk.rng = false;
       var time = performance.now() - start;
       this.benchmarks.population = (this.benchmarks.population + time) / 2;
@@ -5035,6 +5067,7 @@
     constructor(chunks, gen) {
       this.chunks = chunks;
       this.structures = gen;
+      this.start = performance.now();
     }
 
     seedLights(chunk) {
@@ -5054,7 +5087,9 @@
     }
 
     buildLightList(chunk) {
-      if (chunk.initialLighting) return false;
+      if (chunk.initialLighting) return false; // if (performance.now()-this.start > 10000)
+      //  debugger
+
       this.chunks.neighbors(chunk, 9, this.seedLights.bind(this));
       chunk.initialLighting = true;
       var nChunk = this.chunks.getChunk(chunk.x, chunk.y - 1);
@@ -6251,7 +6286,7 @@
 
     blit(chunk) {
       // debugger
-      if (chunk.uploaded) return;
+      if (chunk.uploaded) throw new Error("double blit");
       chunk.uploaded = true;
       let attrs = 8;
       let type = this.gl.UNSIGNED_BYTE;
@@ -6337,7 +6372,7 @@
     }
 
     free(chunk) {
-      if (!chunk.uploaded) return;
+      if (!chunk.uploaded) throw new Error("double free");
       chunk.uploaded = false;
       this.gl.deleteBuffer(chunk.regular.vbo);
       this.gl.deleteVertexArray(chunk.regular.vao);
@@ -6358,23 +6393,10 @@
       var maximumRender = 10000;
       var rList = [];
       var countRenderableChunks = 0;
-      var nearestIncompleteDistance = 100000;
-      let chunkDiagonal = Math.sqrt(Chunk.width * Chunk.width + Chunk.height * Chunk.height);
-      let chunkRadius = chunkDiagonal / 2;
+      var nearestIncompleteDistance = 0;
 
       for (let chunk of chunks.values()) {
-        let centerOfChunk = fromValues$2((chunk.x + .5) * Chunk.width, (chunk.y + .5) * Chunk.height);
-        chunk.distanceToCamera = distance$1(this.renderPosition, centerOfChunk);
-
         if (!chunk.uploaded) {
-          if (nearestIncompleteDistance > chunk.distanceToCamera) {
-            nearestIncompleteDistance = chunk.distanceToCamera;
-          }
-
-          continue;
-        }
-
-        if (chunk.distanceToCamera - chunkDiagonal > this.renderDistance) {
           continue;
         }
 
@@ -6384,19 +6406,27 @@
           continue;
         }
 
+        let centerOfChunk = fromValues$2((chunk.x + .5) * Chunk.width, (chunk.y + .5) * Chunk.height);
+        chunk.distanceToCamera = distance$1(this.renderPosition, centerOfChunk);
+
+        if (nearestIncompleteDistance < chunk.distanceToCamera * .9) {
+          nearestIncompleteDistance = chunk.distanceToCamera * .9;
+        }
+
         var translation = fromValues(chunk.x * Chunk.width, chunk.y * Chunk.height, 0);
         chunk.modelMatrix = create$1();
         translate(chunk.modelMatrix, chunk.modelMatrix, translation);
         rList.push(chunk);
       }
 
-      let completedDistance = nearestIncompleteDistance - chunkRadius;
+      let completedDistance = nearestIncompleteDistance;
 
       if (this.renderDistance < completedDistance) {
         this.renderDistance = (this.renderDistance * 4 + completedDistance) / 5;
       } else {
         this.renderDistance = (this.renderDistance + completedDistance) / 2;
-      }
+      } // this.renderDistance = 10000;
+
 
       rList.sort(function (a, b) {
         return a.distanceToCamera - b.distanceToCamera;
@@ -6541,38 +6571,16 @@
     const float gamma = 0.2;
     const float maxLight = 17.0;
 
-    float inverse_smoothstep( float x ) {
-        return 0.5 - sin(asin(1.0-2.0*x)/3.0);
-    }
-
     void main(void) {
         vec3 cameraPosition = (inverse(uViewMatrix) * vec4(0.0,0.0,0.0,1.0)).xyz;
-
         vec4 worldSpace = uModelMatrix * vec4(aVertexPosition, 1.0);
-        vec3 relativeToCamera = cameraPosition.xyz - worldSpace.xyz;
+        vec3 relativeToCamera = worldSpace.xyz - cameraPosition.xyz;
         float distanceToCamera = length(relativeToCamera.xy);
         vDistance = 1.0-distanceToCamera / uMaximumDistance;
-        // if (vDistance < .3) {
-        //     relativeToCamera.x /= vDistance / .3;
-        //     relativeToCamera.y /= vDistance / .3;
-        // }
-        vec4 worldSpaceReconstructed = vec4(cameraPosition + relativeToCamera, 1.0);
-        vec4 viewSpace = uViewMatrix * worldSpace;
-        vec4 pos = uProjectionMatrix * viewSpace;
+
+        gl_Position = uProjectionMatrix * uViewMatrix * worldSpace;
 
         vAtlas = int(aVertexAtlas);
-        // #ifdef TRANSPARENT
-        // if (vAtlas == 222) {
-        //     float a = cos((pos.x/5.0)+uTime*6.0*3.1415926538);
-        //     float b = sin((pos.y/4.0)+uTime*8.0*3.1415926538);
-        //     tex.x += a/5.0;
-        //     tex.y += b/5.0;
-        //     pos.z += -.18 + (a/20.0 + b/20.0) * .8;
-        // }
-        // #endif
-
-        gl_Position = pos;
-
         vLight = mix(gamma, 1.0, aVertexLight/maxLight);        
         vec2 tex = aVertexTexture;
         vTextureCoord = tex/1.0;
@@ -7083,8 +7091,8 @@
       overlay.appendChild(debugElement);
       var renderDistanceElement = document.createElement("input");
       renderDistanceElement.type = "range";
-      renderDistanceElement.value = 9;
-      renderDistanceElement.min = 6;
+      renderDistanceElement.value = 5;
+      renderDistanceElement.min = 1;
       renderDistanceElement.max = 25;
       renderDistanceElement.step = 1;
       this.renderDistanceElement = renderDistanceElement;
@@ -7595,7 +7603,7 @@
         if (this.onground) {
           if (this.jumpedAndHeld) this.jetpack = true;
           this.jumpedAndHeld = true;
-          this.speed[2] = .17;
+          this.speed[2] = .18;
         }
       } else {
         this.jumpedAndHeld = false;
@@ -7740,116 +7748,129 @@
       // let the host know the area we're in
       if (!this.player) return;
       this.renderer.highlight = this.player.targetVoxel;
-      let rd = this.canvas.renderDistanceElement.value;
+      let rd = parseInt(this.canvas.renderDistanceElement.value);
       var center = this.player.currentChunk;
+      let playerX = Math.floor(this.player.position[0] / (Chunk.width / 4));
+      let playerY = Math.floor(this.player.position[1] / (Chunk.height / 4));
       var q = parseInt(this.canvas.qualityElement.value);
 
       if (this.cache.quality !== q) {
-        this.cache.quality = q; // debugger
+        this.cache.quality = q;
 
         for (let chunk of this.chunks.chunks.values()) {
           chunk.meshDirty = true;
         }
       }
 
-      let chunkRadius = Math.sqrt(Chunk.width * Chunk.width + Chunk.height * Chunk.height) / 2;
-      let chunksByDistance = [];
+      if (center.id != this.cache.chunkID || rd != this.cache.renderDistance || this.cache.playerx != playerX || this.cache.playery != playerY) {
+        let startingSize = this.chunks.chunks.size; // make sure all nearby chunks are in the list
 
-      if (center.id != this.cache.chunkID || rd != this.cache.renderDistance || true) {
-        this.pipe({
-          "event": "chunk_of_interest",
-          "x": center.x,
-          "y": center.y
-        });
-        console.log("old chunk", this.cache.chunkID, "new chunk", center);
-        this.cache.chunkID = this.player.currentChunk.id;
+        let desiredChunks = Math.floor(Math.PI * Math.pow(rd, 2) + 1);
+        let area = this.chunks.spiral(center.x, center.y, rd * 2 + 1).length;
+        console.log("old chunk", this.cache.chunkID, "new chunk", center, "area", area);
+        console.log("cache", this.cache); // update all the cached values
+
         this.cache.renderDistance = rd;
+        this.cache.playerx = playerX;
+        this.cache.playery = playerY;
+        this.cache.chunkID = this.player.currentChunk.id; // pick the closest chunks depending on render distance
+
+        let allChunks = [];
 
         for (let chunk of this.chunks.chunks.values()) {
-          chunk.isHot = false;
-          chunk.isVisible = false;
-          chunk.shouldShow = false;
-          chunk.shouldHide = true;
-          chunk.distanceToPlayer = dist$1([this.player.position[0], this.player.position[1]], [chunk.x * Chunk.width, chunk.y * Chunk.height]);
-          chunksByDistance.push(chunk);
-        } // update the status of chunks in our viewing range
-
-
-        var toSend = this.chunks.spiral(center.x, center.y, this.cache.renderDistance * 2);
-
-        for (var i = 0; i < toSend.length; i++) {
-          let chunk = toSend[i];
-          chunk.isHot = true;
-          chunk.isVisible = chunk.distanceToPlayer <= this.cache.renderDistance * chunkRadius;
-        }
-      }
-
-      chunksByDistance.sort(function (a, b) {
-        return a.distanceToPlayer - b.distanceToPlayer;
-      }); // update the visibility flag
-
-      for (let chunk of chunksByDistance) {
-        if (!chunk.isHot) continue;
-        if (!chunk.isVisible) continue;
-        chunk.shouldHide = false;
-        if (!chunk.map) continue;
-        var count = 0;
-        this.chunks.neighbors(chunk, 8, function (chunk) {
-          if (chunk.map) count++;
-          chunk.isHot = true;
-          chunk.shouldHide = false;
-        });
-        if (count < 8) continue; // neighbors are all ready, lets get this rendering
-
-        chunk.shouldShow = true;
-      }
-
-      var allowedWork = 7; // for every chunk, see if we need to free things
-
-      for (let chunk of chunksByDistance) {
-        // create or destroy the mesh
-        if (chunk.shouldShow) {
-          if (!chunk.meshUploaded && chunk.meshReady) {
-            this.renderer.blit(chunk);
-            chunk.meshUploaded = true;
-            chunk.meshReady = false;
-            console.timeStamp("blit chunk");
-          }
-
-          if (chunk.meshDirty && !chunk.meshPending && allowedWork > 0) {
-            allowedWork -= 1;
-            var padded = this.chunks.padded(chunk);
-            this.work({
-              "event": "tesselate",
-              "chunk": padded,
-              "quality": this.cache.quality
-            }, [padded.map.buffer, padded.lights.buffer, padded.heights.buffer]);
-            chunk.meshPending = true;
-            chunk.meshDirty = false;
-          }
+          chunk.distanceToPlayer = dist$1([this.player.position[0], this.player.position[1]], [(chunk.x + .5) * Chunk.width, (chunk.y + .5) * Chunk.height]);
+          chunk.need = false;
+          chunk.render = false;
+          allChunks.push(chunk);
         }
 
-        if (chunk.shouldHide) {
-          if (chunk.meshUploaded) {
-            this.renderer.free(chunk);
-            chunk.meshUploaded = false;
-            chunk.meshDirty = true;
-          }
-        } // clean this chunk up entirely
+        allChunks.sort((a, b) => a.distanceToPlayer - b.distanceToPlayer);
+        allChunks = allChunks.slice(0, desiredChunks);
 
-
-        if (!chunk.isHot) {
-          console.log("freeing", chunk, chunk.id);
-          if (chunk.wasSent) this.pipe({
-            "event": "unloaded_chunk",
-            "x": chunk.x,
-            "y": chunk.y
+        for (let chunk of allChunks) {
+          // if we want to render this one, we need its neighbors too
+          // we can't do this in the previous pass
+          chunk.render = true;
+          this.chunks.neighbors(chunk, 9, function (chunk) {
+            chunk.need = true;
           });
-          chunk.wasSent = false;
-          chunk.map = null;
-          chunk.lights = null;
-          this.chunks.chunks.delete(chunk.id);
-        }
+        } // collect the chunks we need, free the chunks we don't
+
+
+        this.chunksByDistance = [];
+        let freeList = [];
+        this.chunks.chunks.forEach(c => (c.need ? this.chunksByDistance : freeList).push(c)); // clean up the free list, manage the chunksByDistance over time
+
+        for (let chunk of freeList) {
+          if (chunk.meshUploaded || chunk.meshPending) this.chunksByDistance.push(chunk);else this.chunks.free(chunk);
+        } // now finally we can sort it
+
+
+        this.chunksByDistance.sort((a, b) => a.distanceToPlayer - b.distanceToPlayer); // let needCount = Array.from(this.chunks.chunks.values()).filter((c) => c.need).length
+        // let renderCount = Array.from(this.chunks.chunks.values()).filter((c) => c.render).length
+        // console.log("len", this.chunks.chunks.size, "inspect:", area, "need:", needCount, "render:", renderCount)
+
+        console.log("updated chunks from", startingSize, "-", freeList.length, "=", this.chunks.chunks.size);
+      } // now comes getting chunks into their correct state
+      // done in a few passes for readability
+
+
+      var allowedWork = 40; // try to fetch any chunks that we dont have yet from the server
+
+      for (let chunk of this.chunksByDistance) {
+        if (allowedWork <= 0) return;
+        if (chunk.map) continue;
+        if (chunk.requested) continue;
+        chunk.requested = true;
+        allowedWork -= 2;
+        this.pipe({
+          "event": "request_chunk",
+          x: chunk.x,
+          y: chunk.y
+        });
+      } // try to get chunks rendering
+
+
+      for (let chunk of this.chunksByDistance) {
+        if (allowedWork <= 0) return;
+        if (!chunk.render || chunk.meshUploaded || !chunk.meshReady) continue;
+        allowedWork -= 1;
+        this.renderer.blit(chunk);
+        chunk.meshUploaded = true;
+        chunk.meshReady = false;
+        console.timeStamp("blit chunk");
+      } // try to get chunks to the meshing thread
+
+
+      for (let chunk of this.chunksByDistance) {
+        if (allowedWork <= 0) return;
+        if (!chunk.meshDirty || chunk.meshPending) continue; // count neighbors first
+
+        let count = 0;
+        this.chunks.neighbors(chunk, 8, chunk => count += chunk.map ? 1 : 0);
+        if (count < 8) continue;
+        allowedWork -= 10;
+        var padded = this.chunks.padded(chunk);
+        this.work({
+          "event": "tesselate",
+          "chunk": padded,
+          "quality": this.cache.quality
+        }, [padded.map.buffer, padded.lights.buffer, padded.heights.buffer]);
+        chunk.meshPending = true;
+        chunk.meshDirty = false;
+      } // try to stop rendering chunks we dont need to render
+
+
+      for (let i = this.chunksByDistance.length - 1; i >= 0; i--) {
+        let chunk = this.chunksByDistance[i];
+        if (allowedWork <= 0) return;
+        if (chunk.render || !chunk.meshUploaded || chunk.meshPending) continue;
+        allowedWork -= 1;
+        this.renderer.free(chunk);
+        chunk.meshUploaded = false;
+        chunk.meshDirty = true;
+        this.chunks.free(chunk);
+        console.timeStamp("free chunk");
       }
     }
 
@@ -7915,6 +7936,7 @@
           chunk.biome = ev.chunk.biome;
           chunk.wasSent = true;
           chunk.meshDirty = true;
+          chunk.requested = false;
           return;
 
         case "tesselated":
@@ -7947,38 +7969,17 @@
     }
 
     tick_host() {
-      var toSend = this.chunks.spiral(this.hotChunk.x, this.hotChunk.y, 35);
-      var work = 0;
-
-      for (var i = 0; i < toSend.length; i++) {
-        if (work > 4) break;
-        var chunk = toSend[i];
-        if (chunk.sent) continue; // debugger
-
-        var start = performance.now();
-        this.lighter.buildLightList(chunk);
-        this.pipe({
-          "event": "new_chunk",
-          "chunk": chunk
-        });
-        this.pipe({
-          event: "profile",
-          label: "get_completed_chunk",
-          ms: performance.now() - start
-        });
-        this.pipe({
-          event: "profile",
-          label: "chunk_generate",
-          ms: this.generator.benchmarks.generation
-        });
-        this.pipe({
-          event: "profile",
-          label: "chunk_populate",
-          ms: this.generator.benchmarks.population
-        });
-        chunk.sent = true;
-        work++;
-      }
+      this.pipe({
+        event: "profile",
+        label: "chunk_generate",
+        ms: this.generator.benchmarks.generation
+      });
+      this.pipe({
+        event: "profile",
+        label: "chunk_populate",
+        ms: this.generator.benchmarks.population
+      });
+      return;
     }
 
     handle_worker(ev) {
@@ -8008,7 +8009,7 @@
             "event": "spawn"
           });
           this.hotChunk = this.chunks.getChunk(0, 0);
-          setInterval(this.tick_host.bind(this));
+          setInterval(this.tick_host.bind(this), 5);
           break;
 
         case "unloaded_chunk":
@@ -8017,8 +8018,19 @@
           chunk.sent = false;
           return;
 
-        case "chunk_of_interest":
-          this.hotChunk = this.chunks.getChunk(ev.x, ev.y);
+        case "request_chunk":
+          var start = performance.now();
+          var chunk = this.chunks.getChunk(ev.x, ev.y);
+          this.lighter.buildLightList(chunk);
+          this.pipe({
+            "event": "new_chunk",
+            "chunk": chunk
+          });
+          this.pipe({
+            event: "profile",
+            label: "get_completed_chunk",
+            ms: performance.now() - start
+          });
           return;
         // skip profiling and such
 
