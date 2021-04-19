@@ -1,5 +1,5 @@
 update_blog:
-	rsync -r ../freeworld/blog/public/* ./blog
+	rsync -avu --delete ../freeworld/blog/public/ ./blog
 	git add .
 	git commit -m "updating blog"
 	git push
