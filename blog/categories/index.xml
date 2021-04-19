@@ -46,7 +46,7 @@
 + Fast, constant-time read and write operations&lt;br&gt;
 + Naturally infinite in all dimensions&lt;/p&gt;
 &lt;p&gt;Cons:&lt;br&gt;
-- Space inefficient, constant size regardless of data
+- Space inefficient, constant size regardless of data&lt;br&gt;
 - Fixed sense of scale&lt;/p&gt;
 &lt;h2 id=&#34;in-the-context-of-webvoxel&#34;&gt;In the context of WebVoxel&lt;/h2&gt;
 &lt;p&gt;Going back to WebVoxel&amp;rsquo;s intention, the engine should be flexible &lt;em&gt;enough&lt;/em&gt; to have many video game genres and mechanics layered on top, but must balance that against complexity. Here are some common ways in which the data structure will be important to a game developer building upom the engine:&lt;/p&gt;
