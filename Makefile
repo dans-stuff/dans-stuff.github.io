@@ -3,7 +3,7 @@ update:
 	cp ../freeworld/assets/index.html .
 	cp ../freeworld/assets/minimal.js .
 	cp ../freeworld/assets/minimal.html .
-	cp -R ../freeworld/blog/public ./blog
+	cp -R ../freeworld/blog/public/* ./blog
 	git add .
 	git commit -m "updating bundle"
 	git push
