@@ -7,49 +7,124 @@
         <span class="header right-side"><div class="nav wrap"><nav class="nav"><a class="nav item" href="/blog/">[All Posts]</a><a class="nav item" href="https://dans-stuff%2egithub%2eio/"target="_blank" rel="noopener noreferrer">[Live Demo]</a><a class="nav item" href="/blog/tags">[Post Tags]</a><a class="nav item" href="/blog/about">[About]</a></nav></div></span></div><div class="site slogan"><span class="title">Exploring voxels as a foundation for browser games</span></div></section><section id="content"><div class="article-container"><section class="article header">
     <h1 class="article title">01 - Data Structures</h1><p class="article date">Sunday, April 18, 2021</p></section><article class="article markdown-body"><h1 id="data-structures">Data Structures</h1>
 <p>Voxel engines come in many flavors. I want to compare and consider a few data structures for voxel data to find which is the most appropriate for this project.</p>
-<h2 id="list">List</h2>
-<p>The simplest data structure would be simply a list of voxels, specifying coordinate and type. Objects in game engines are almost always tracked in lists, as are particles.</p>
+<h3 id="webvoxel-considerations">WebVoxel Considerations</h3>
+<p>To accomplish WebVoxel&rsquo;s goal, the engine should be flexible <em>enough</em> to have many video game genres and mechanics layered on top, but must balance that against complexity. Here are some common ways in which the data structure will be important to a game developer building upon the engine:</p>
+<p>- Navigation. Players and NPC&rsquo;s alike will be navigating the world in a manner specific and custom to the game.<br>
+- Interaction. For some games, the voxel terrain may be nothing more than a solid static world, but for others interaction may be extremely high.<br>
+- Rendering Performance. Every single game is going to be rendering the voxel scenes, but how dynamic the scene needs to be can have a big impact on how it is rendered.</p>
+<p>One important observation in all of these is the need to <strong>quickly traverse the immediate neighborhood</strong> of any given point in space, that is, querying every voxel in the <a href="https://en.wikipedia.org/wiki/Moore_neighborhood"target="_blank" rel="noopener noreferrer">moore neighborhood</a>
+ of another voxel. Such traversal is used on physics, AI, lighting, pathfinding, and many general game elements. It&rsquo;s important to understand the distinction between the terms <strong>iteration</strong> and <strong>traversal</strong>.</p>
+<p><strong>Iteration</strong> is visiting every single voxel, the order is irrelevant. The minimum theoretical  time to iterate an entire set of voxels is O(n) where n is the total amount of voxels.</p>
+<p><strong>Traversal</strong> is visiting voxels in an order not determined ahead of time, such as visiting the neighborhood of a given voxel. The work of a voxel engine is equal parts iteration and traversal, therefor each data structure will be judged on those two requirements. Roughly speaking, traversal is the same as random access, though some data structures are faster to access nearby data. Traversal is measured per voxel traversed.</p>
+<h1 id="breakdown">Breakdown</h1>
+<p>Any complexity in the data structure could be abstracted, but any game will have custom demands that are not suitable for a base engine and it&rsquo;s extremely important that any custom mechanics are not made more difficult by the complexity of the engine.</p>
+<p>So let&rsquo;s take a look at 4 data structures which seem suitable. When using big-O notation, <code>n</code> will indicate the total amount of voxels in our scene.</p>
+<h2 id="data-structure-list">Data Structure: List</h2>
+<p><img  src="list.png"
+        alt="List Diagram"/></p>
+<p>The simplest data structure would be simply a list of voxels, specifying coordinate and type. Objects in game engines are almost always tracked in lists, as are particles. Lists are inclusive of a few data structures, from flat contiguous arrays, to linked list, to a heap that remains always sorted via some book-keeping during modifications.</p>
 <p>Pros<br>
 + The simplest in concept, adding a voxel to the world means adding it to a list<br>
-+ Fast iteration, creation and deletion of voxels<br>
-+ Memory usage scales with the amount of voxels</p>
++ Fast iteration and creation of voxels<br>
++ Memory usage scales with the amount of voxels<br>
++ Iteration is <code>O(n)</code></p>
 <p>Cons:<br>
-- Extremely slow random access by coordinate<br>
-- Space inefficient for dense voxel scenes</p>
-<p>Lists could have special behaviour, such as always being sorted to allow for binary-search lookups, but finding a voxel by coordinate will always amount to a search through the list.</p>
-<h2 id="octree">Octree</h2>
+- Extremely slow random access by coordinate, therefor slow traversal<br>
+- Space inefficient for dense voxel scenes<br>
+- Search time scales with voxel count at more than a constant rate
+- Performance can be improved at a rapid cost of increased complexity
+- Traversal in the average case is <code>O(log n)</code></p>
+<p>For hundreds of voxels, perhaps thousands, the characteristics of a list are quite nice and in some cases will outperform the other options. For example, if voxels act more like particles with very high energy, moving from frame to frame, and only get deleted during iteration, this structure might be ideal.</p>
+<p><strong>Lists</strong> are immediately rejected as a candidate due to one major flaw, the scaling characteristics of traversal. Looking up a neighboring voxel is no faster than any random access, which is implemented as a search. While iteration is our desired <code>O(n)</code>, traversal is a pretty bad <code>O(log n)</code>.</p>
+<h2 id="data-structure-octree">Data Structure: Octree</h2>
+<p><img  src="octree.png"
+        alt="Octree Diagram"/></p>
 <p>This is the go-to data structure for sparse data, ie, data that tends to clump together. The short explanation is that octrees are a tree, where each branch encompasses a different region of space. If all of the data contained in a branch is the same, the branch is a &ldquo;leaf&rdquo; and has no children. If the data is varied, though, the branch if split into 8 smaller branches, each of which acts the same.</p>
 <p>In terms of voxels, this means large areas with identical voxels would be stored as a single leaf node, and only more detailed/varied areas would have deeper branches. The deeper the branches can go, the more detail you can represent.</p>
 <p>Pros:<br>
 + Extremely space efficient, capable of storing billions of voxels<br>
 + Changes to the tree provide deltas, efficient for networking<br>
-+ Fast to raytrace, as large areas are skipped at each step</p>
++ Fast to raytrace, as large areas are skipped at each step<br>
++ Iteration is sort of <code>O(log n)</code> with a twist</p>
 <p>Cons:<br>
 - Random access for a given coordinate is slow, especially when writing<br>
 - Relatively complex to work with<br>
-- Fixed size, tho new octrees could be created as needed for an infinite space</p>
-<h2 id="pages">Pages</h2>
+- Fixed size, tho new octrees could be created as needed for an infinite space<br>
+- Traversal in the average case is <code>O(log n)</code></p>
+<p><strong>Octrees</strong> are a tough contender, as they can be abstracted to provide random access queries, but at a performance cost. Collision detection gets a bonus here, as bounding-box queries into an octree can be the fastest of the options. The networking capability is another bonus, as octrees naturally provide contained deltas for any changes. When it comes to iteration, octrees are interesting: their nature allows for large regions of identical voxels to be skipped or treated as identical without needing to iterate them individually, but it may be hard to utilize that property in practice, though raytracing fully utilizes this property to achieve realtime performance.</p>
+<p>However, the complexity of octrees will undoubtedly leak to the game developer, and two of the pros are irrelevant in the context of a browser game which should not require hardware sufficient for raytracing nor interaction of billions of voxels.</p>
+<h2 id="data-structure-hash-maps">Data Structure: Hash Maps</h2>
+<p><img  src="hashmap.png"
+        alt="Hash Map Diagram"/></p>
+<p>When you think of needing to index into a set of data, a hash map might seem like a viable data structure. The basic premise is that you create a key from the data to look at a specific bucket, then iterate that bucket to find the data you&rsquo;re looking for.</p>
+<p>Pros:<br>
++ Easy to use, implemented natively in most languages<br>
++ Iteration is <code>O(n)</code><br>
++ Traversal in the average case is <code>O(1)</code></p>
+<p>Cons:
+- Space inefficient, as voxels need to store coordinate
+- Traversal time on average has a high constant factor</p>
+<p><strong>Hash Maps</strong> seem like a good candidate in general, however internally there is a lot of book-keeping which applies to every read and write. There is no concept of locality, so traversal to a neighbor is the same as a random lookup. One major drawback is how the structure scales - more voxels mean more buckets, which means the buckets need to be rebalanced, which can have quite a high cost. If anything about this data structure is a show stopper, it&rsquo;s the memory overhead, which is a very high constant of <code>O(n)</code> not only due to the coordinates taking up space for each voxel, but the buckets and their padding taking up extra space.</p>
+<h2 id="data-structure-pages">Data Structure: Pages</h2>
+<p><img  src="pages.png"
+        alt="Paging Diagram"/></p>
 <p>Pages are often called chunks in the context of voxels. With pages, space is divided into an even grid, which is paged in and out of memory as needed. All of the pages would represent the same amount of space, and is at minimum a large flat buffer where each element in the buffer is one voxel.</p>
 <p>For any given coordinate you can determine the page and index within that page with constant time math. Reading or writing to that index is also constant time, and extremely fast.</p>
 <p>Pros:<br>
 + Conceptually very simple<br>
 + Fast, constant-time read and write operations<br>
-+ Naturally infinite in all dimensions</p>
++ Naturally infinite in all dimensions<br>
++ Iteration is <code>O(n)</code>
++ Traversal is <code>O(1)</code></p>
 <p>Cons:<br>
 - Space inefficient, constant size regardless of data<br>
-- Fixed sense of scale</p>
-<h2 id="in-the-context-of-webvoxel">In the context of WebVoxel</h2>
-<p>Going back to WebVoxel&rsquo;s intention, the engine should be flexible <em>enough</em> to have many video game genres and mechanics layered on top, but must balance that against complexity. Here are some common ways in which the data structure will be important to a game developer building upom the engine:</p>
-<p>- Navigation. Players and NPC&rsquo;s alike will be navigating the world in a manner specific and custom to the game.<br>
-- Interaction. For some games, the voxel terrain may be nothing more than a solid static world, but for others interaction may be extremely high.<br>
-- Rendering Performance. Every single game is going to be rendering the voxel scenes, but how dynamic the scene needs to be can have a big impact on how it is rendered.</p>
-<p>Any complexity in the data structure could be abstracted, but any game will have custom demands that are not suitable for a base engine and it&rsquo;s extremely important that any custom mechanics are not made more difficult by the complexity of the engine.</p>
-<p>Lists are immediately rejected as a candidate, because navigation would be impractical thanks to the slow random access by coordinate. That said, rendering and interacting with a list is not particularly bad, as iteration is fast and conceptually easy. The game developer could simply iterate through all voxels to see if any of them need to be interacted with in any way.</p>
-<p>Octrees are a tough contender, as they can be abstracted to provide random access queries, but at a performance cost. Collision detection gets a bonus here, as bounding-box queries into an octree can be the fastest of the options. However, the complexity of octrees will undoubtedly leak to the game developer. Furthermore, two of the pros are irrelevant, as a browser game should not require hardware sufficient for raytracing, nor for interaction with billions of voxels. However, the networking capability is a very strong point in favor of octrees.</p>
-<p>Paging is the strongest contender, mainly due to it&rsquo;s balanced approach. The complexity is small, as the most naive and obvious way to work with the structure will usually be the correct one. The space requirements would often be problematic, but in the context of web-based games, the amount of voxels will be small. Constant-time operations will help deliver smooth, uninterrupted gameplay. Also, the main issue unique to pages is the scale of the voxels, which in the context of web-games can be considered a positive. Interactions and game rules will only need to consider voxels with a fixed size, and level or scene development will be kept consistent and predictable.</p>
-<h2 id="conclusion">Conclusion</h2>
-<p>In conclusion, pages make the most sense. Web-based games are much smaller in scope and complexity, because they target consumers with low-powered hardware, such as phones and laptops. Additionally, they generally require lower commitment, and so the gameplay should be simple to learn quickly. This means that the benefits of a more complex data structure will never be realized, and the performance of a simpler data structure will be unsufficient.</p>
-<p>Going forward, the central data structure of WebVoxel will be buffers indexed by coordinate and paged in or out as needed.</p>
+- Fixed world space partition size (fixed voxel size)</p>
+<p><strong>Paging</strong> is the strongest contender, mainly due to it&rsquo;s balanced approach. The complexity is small, as the most naive and obvious way to work with the structure will usually be the correct one. The space requirements would often be problematic, but in the context of web-based games, the amount of voxels will be small. Constant-time operations will help deliver smooth, uninterrupted gameplay. Also, the main issue unique to pages is the scale of the voxels, which in the context of web-games can be considered a positive. Interactions and game rules will only need to consider voxels with a fixed size, and level or scene development will be kept consistent and predictable.</p>
+<h1 id="conclusion">Conclusion</h1>
+<table>
+<thead>
+<tr>
+<th>Comparison</th>
+<th>Space</th>
+<th>Traversal</th>
+<th>Iteration</th>
+<th>Complexity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lists</td>
+<td><code>O(2n)</code></td>
+<td><code>O(log n)</code></td>
+<td><code>O(n)</code></td>
+<td><code>Medium</code></td>
+</tr>
+<tr>
+<td>Octrees</td>
+<td><code>O(log n)</code></td>
+<td><code>O(log n)</code></td>
+<td><code>O(log n)*</code></td>
+<td><code>High</code></td>
+</tr>
+<tr>
+<td>Hash Maps</td>
+<td><code>O(2n)</code></td>
+<td><code>O(1)*</code></td>
+<td><code>O(n)</code></td>
+<td><code>Low</code></td>
+</tr>
+<tr>
+<td>Pages</td>
+<td><code>O(n)</code></td>
+<td><code>O(1)</code></td>
+<td><code>O(n)</code></td>
+<td><code>Low</code></td>
+</tr>
+</tbody>
+</table>
+<p>To summarize these structures: lists are superceded by hash maps, and are only favorable for high-energy voxels; octrees are brilliant for everything but random access; hash maps are a simple solution but have unpredictable random access; and pages are space inefficient but predictable and simple in all other ways. One interesting observation is that hash maps and pages are extremely similar - they are both a contiguous list of voxels, partitioned by their coordinate. Pages are essentially a hash map, where the buckets are fixed-size to allow for addressing by coordinate rather than searching, which is exactly how they are implemented.</p>
+<p>For WebVoxel, pages seem to be the most reasonable solution. Web-based games are generally small in scope and complexity, because they target consumers with low-powered hardware, such as phones and laptops. They generally require low player commitment, and so the gameplay should be simple to learn quickly, which can be helped by fixed-size voxels. The benefits of a more complex data structure will never be realized in a web-based game. Runtime performance becomes important, but due to the size and detail of the scenes, memory is not much of a concern. Finally, predictability is a key asset, as we can now know ahead of time how the game developer will be using the voxel engine.</p>
+<p>That is why the core data structure of WebVoxel is buffers indexed by coordinate and paged in or out as needed.</p>
 </article><section class="article labels"><a class="tag" href=/blog/tags/engine/>engine</a><a class="tag" href=/blog/tags/data/>data</a></section><section class="article author"><p class="name">Dan</p><div class="bio">Engine Dev</div><div class="details"></div>
 </section>
 </div>
