@@ -42,8 +42,8 @@
 &lt;p&gt;Cons:&lt;br&gt;
 - Extremely slow random access by coordinate, therefor slow traversal&lt;br&gt;
 - Space inefficient for dense voxel scenes&lt;br&gt;
-- Search time scales with voxel count at more than a constant rate
-- Performance can be improved at a rapid cost of increased complexity
+- Search time scales with voxel count at more than a constant rate&lt;br&gt;
+- Performance can be improved at a rapid cost of increased complexity&lt;br&gt;
 - Traversal in the average case is &lt;code&gt;O(log n)&lt;/code&gt;&lt;/p&gt;
 &lt;p&gt;For hundreds of voxels, perhaps thousands, the characteristics of a list are quite nice and in some cases will outperform the other options. For example, if voxels act more like particles with very high energy, moving from frame to frame, and only get deleted during iteration, this structure might be ideal.&lt;/p&gt;
 &lt;p&gt;&lt;strong&gt;Lists&lt;/strong&gt; are immediately rejected as a candidate due to one major flaw, the scaling characteristics of traversal. Looking up a neighboring voxel is no faster than any random access, which is implemented as a search. While iteration is our desired &lt;code&gt;O(n)&lt;/code&gt;, traversal is a pretty bad &lt;code&gt;O(log n)&lt;/code&gt;.&lt;/p&gt;
@@ -72,8 +72,8 @@
 + Easy to use, implemented natively in most languages&lt;br&gt;
 + Iteration is &lt;code&gt;O(n)&lt;/code&gt;&lt;br&gt;
 + Traversal in the average case is &lt;code&gt;O(1)&lt;/code&gt;&lt;/p&gt;
-&lt;p&gt;Cons:
-- Space inefficient, as voxels need to store coordinate
+&lt;p&gt;Cons:&lt;br&gt;
+- Space inefficient, as voxels need to store coordinate&lt;br&gt;
 - Traversal time on average has a high constant factor&lt;/p&gt;
 &lt;p&gt;&lt;strong&gt;Hash Maps&lt;/strong&gt; seem like a good candidate in general, however internally there is a lot of book-keeping which applies to every read and write. There is no concept of locality, so traversal to a neighbor is the same as a random lookup. One major drawback is how the structure scales - more voxels mean more buckets, which means the buckets need to be rebalanced, which can have quite a high cost. If anything about this data structure is a show stopper, it&amp;rsquo;s the memory overhead, which is a very high constant of &lt;code&gt;O(n)&lt;/code&gt; not only due to the coordinates taking up space for each voxel, but the buckets and their padding taking up extra space.&lt;/p&gt;
 &lt;h2 id=&#34;data-structure-pages&#34;&gt;Data Structure: Pages&lt;/h2&gt;
@@ -85,7 +85,7 @@
 + Conceptually very simple&lt;br&gt;
 + Fast, constant-time read and write operations&lt;br&gt;
 + Naturally infinite in all dimensions&lt;br&gt;
-+ Iteration is &lt;code&gt;O(n)&lt;/code&gt;
++ Iteration is &lt;code&gt;O(n)&lt;/code&gt;&lt;br&gt;
 + Traversal is &lt;code&gt;O(1)&lt;/code&gt;&lt;/p&gt;
 &lt;p&gt;Cons:&lt;br&gt;
 - Space inefficient, constant size regardless of data&lt;br&gt;
