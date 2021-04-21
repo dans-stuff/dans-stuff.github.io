@@ -61,9 +61,9 @@
 &lt;h2 id=&#34;step-4b---forced-ordering&#34;&gt;Step 4b - Forced Ordering&lt;/h2&gt;
 &lt;p&gt;During generation, when we are running phase 1 seed placement for all neighboring chunks, we should apply those structures in a strict ordering, for example from -X to +X then -Y to +Y (or whatever your 2 horizontal dimensions are). This means that Philly will generate first, and then New York would generate second, regardless of which village was discovered first.&lt;/p&gt;
 &lt;p&gt;This solution solves our problem without adding any extra complexity or computation.&lt;/p&gt;
-&lt;p&gt;\1 Generate phase 1 seeding for a huge region of chunks
-\2 Collect the list of chunks that might influence the current chunk, recursively
-\3 Sort that list by chunk coordinate
+&lt;p&gt;\1 Generate phase 1 seeding for a huge region of chunks&lt;br&gt;
+\2 Collect the list of chunks that might influence the current chunk, recursively&lt;br&gt;
+\3 Sort that list by chunk coordinate&lt;br&gt;
 \4 Bring all of those chunks up to the next phase in that order&lt;/p&gt;
 &lt;h2 id=&#34;conclusion&#34;&gt;Conclusion&lt;/h2&gt;
 &lt;p&gt;You might be realizing that this solution is not really perfect. For example, if you attempt to generate a chunk that is on the edge of a forest, it will recursively require every chunk in that entire forest to be past the seeding phase, and then will perform the expensive terrain generation phase for all of those chunks. Perfect deterministic terrain generation of inter-dependent chunks is actually a very complicated, almost untractable problem. You could realistically implement step 3 and accept the slight non-determinism.&lt;/p&gt;
